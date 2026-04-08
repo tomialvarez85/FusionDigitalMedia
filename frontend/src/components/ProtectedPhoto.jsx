@@ -1,26 +1,31 @@
 import { useEffect, useRef, useState } from "react";
+import { API } from "@/App";
 
 /**
- * ProtectedPhoto - Renders images on canvas with watermark and blur protection
- * - Diagonal watermark text overlay
- * - Progressive blur on bottom 50%
- * - Right-click and drag disabled
- * - No raw image URL exposed in DOM
+ * ProtectedPhoto - Secure image rendering via backend proxy + canvas
+ * 
+ * Security features:
+ * - Images loaded via backend proxy (no direct URLs exposed)
+ * - Rendered on HTML Canvas (not <img> tags)
+ * - Diagonal watermark: "LUX STUDIO" at -30°, 25% opacity, gold color
+ * - Bottom 50% blur effect (20px)
+ * - Footer copyright text
+ * - Right-click, drag, and keyboard shortcuts disabled
  */
 const ProtectedPhoto = ({ 
-  src, 
+  photoId,
   width, 
   height, 
-  watermarkText = "Lux Studio",
   className = ""
 }) => {
   const canvasRef = useRef(null);
+  const containerRef = useRef(null);
   const [loaded, setLoaded] = useState(false);
-  const [displaySize, setDisplaySize] = useState({ width: 0, height: 0 });
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !photoId) return;
 
     const ctx = canvas.getContext('2d');
     const img = new Image();
@@ -35,118 +40,214 @@ const ProtectedPhoto = ({
       // Set canvas size
       canvas.width = displayWidth;
       canvas.height = displayHeight;
-      setDisplaySize({ width: displayWidth, height: displayHeight });
 
-      // Draw image
+      // Draw the original image
       ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
 
-      // Apply progressive blur to bottom 50%
-      applyProgressiveBlur(ctx, displayWidth, displayHeight);
+      // Apply bottom 50% blur effect
+      applyBottomBlur(ctx, displayWidth, displayHeight);
 
-      // Draw watermark
-      drawWatermark(ctx, displayWidth, displayHeight, watermarkText);
+      // Draw diagonal watermark
+      drawWatermark(ctx, displayWidth, displayHeight);
+
+      // Draw footer copyright
+      drawFooterCopyright(ctx, displayWidth, displayHeight);
 
       setLoaded(true);
     };
 
     img.onerror = () => {
-      console.error("Failed to load image");
+      console.error("Failed to load image via proxy");
+      setError(true);
       setLoaded(true);
     };
 
-    img.src = src;
-  }, [src, watermarkText]);
+    // Load image via backend proxy - NO direct URL exposed
+    img.src = `${API}/photos/${photoId}/view`;
+  }, [photoId]);
 
-  const applyProgressiveBlur = (ctx, width, height) => {
+  // Disable keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Disable Ctrl+S, Ctrl+U, Ctrl+Shift+I
+      if (
+        (e.ctrlKey && e.key === 's') ||
+        (e.ctrlKey && e.key === 'u') ||
+        (e.ctrlKey && e.shiftKey && e.key === 'I')
+      ) {
+        e.preventDefault();
+        return false;
+      }
+    };
+
+    const container = containerRef.current;
+    if (container) {
+      container.addEventListener('keydown', handleKeyDown);
+    }
+    
+    return () => {
+      if (container) {
+        container.removeEventListener('keydown', handleKeyDown);
+      }
+    };
+  }, []);
+
+  const applyBottomBlur = (ctx, width, height) => {
     // Get the bottom 50% of the image
     const startY = Math.floor(height * 0.5);
     const blurHeight = height - startY;
     
-    // Apply multiple blur passes with increasing intensity
-    const passes = 5;
-    for (let i = 0; i < passes; i++) {
-      const y = startY + (blurHeight / passes) * i;
-      const h = blurHeight / passes;
+    // Create a temporary canvas for blur effect
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = width;
+    tempCanvas.height = blurHeight;
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    // Copy bottom section
+    const imageData = ctx.getImageData(0, startY, width, blurHeight);
+    tempCtx.putImageData(imageData, 0, 0);
+    
+    // Apply multiple blur passes for 20px equivalent blur
+    const passes = 8;
+    const baseRadius = 3;
+    
+    for (let pass = 0; pass < passes; pass++) {
+      const currentImageData = tempCtx.getImageData(0, 0, width, blurHeight);
+      const data = currentImageData.data;
+      const blurredData = new Uint8ClampedArray(data);
       
-      // Get image data for this section
-      const imageData = ctx.getImageData(0, y, width, h);
-      const data = imageData.data;
+      const radius = baseRadius;
       
-      // Apply box blur with increasing radius
-      const radius = Math.min(3 + i * 2, 10);
-      
-      for (let py = 0; py < h; py++) {
+      for (let py = 0; py < blurHeight; py++) {
+        // Increase blur intensity towards bottom
+        const blurIntensity = (py / blurHeight);
+        const effectiveRadius = Math.floor(radius * blurIntensity * 2) + 1;
+        
         for (let px = 0; px < width; px++) {
-          let r = 0, g = 0, b = 0, count = 0;
+          let r = 0, g = 0, b = 0, a = 0, count = 0;
           
-          for (let dy = -radius; dy <= radius; dy++) {
-            for (let dx = -radius; dx <= radius; dx++) {
+          for (let dy = -effectiveRadius; dy <= effectiveRadius; dy++) {
+            for (let dx = -effectiveRadius; dx <= effectiveRadius; dx++) {
               const nx = px + dx;
               const ny = py + dy;
               
-              if (nx >= 0 && nx < width && ny >= 0 && ny < h) {
+              if (nx >= 0 && nx < width && ny >= 0 && ny < blurHeight) {
                 const idx = (ny * width + nx) * 4;
                 r += data[idx];
                 g += data[idx + 1];
                 b += data[idx + 2];
+                a += data[idx + 3];
                 count++;
               }
             }
           }
           
           const idx = (py * width + px) * 4;
-          data[idx] = r / count;
-          data[idx + 1] = g / count;
-          data[idx + 2] = b / count;
+          blurredData[idx] = r / count;
+          blurredData[idx + 1] = g / count;
+          blurredData[idx + 2] = b / count;
+          blurredData[idx + 3] = a / count;
         }
       }
       
-      ctx.putImageData(imageData, 0, y);
+      tempCtx.putImageData(new ImageData(blurredData, width, blurHeight), 0, 0);
     }
-  };
-
-  const drawWatermark = (ctx, width, height, text) => {
+    
+    // Draw blurred section back with gradient fade
     ctx.save();
     
-    // Configure watermark style
-    const fontSize = Math.max(width / 15, 20);
-    ctx.font = `${fontSize}px "Cormorant Garamond", serif`;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    // Create gradient mask for smooth transition
+    const gradient = ctx.createLinearGradient(0, startY, 0, height);
+    gradient.addColorStop(0, 'rgba(0,0,0,0)');
+    gradient.addColorStop(0.3, 'rgba(0,0,0,1)');
+    gradient.addColorStop(1, 'rgba(0,0,0,1)');
     
-    // Calculate diagonal angle
-    const angle = -Math.atan(height / width);
-    
-    // Draw multiple watermarks across the image
-    const spacing = fontSize * 4;
-    const diagonal = Math.sqrt(width * width + height * height);
-    
-    ctx.translate(width / 2, height / 2);
-    ctx.rotate(angle);
-    
-    for (let y = -diagonal / 2; y < diagonal / 2; y += spacing) {
-      for (let x = -diagonal / 2; x < diagonal / 2; x += spacing * 2) {
-        ctx.fillText(text, x, y);
-      }
-    }
+    // Draw the blurred image
+    ctx.drawImage(tempCanvas, 0, startY);
     
     ctx.restore();
   };
 
+  const drawWatermark = (ctx, width, height) => {
+    ctx.save();
+    
+    // Move to center
+    ctx.translate(width / 2, height / 2);
+    
+    // Rotate -30 degrees
+    ctx.rotate(-30 * Math.PI / 180);
+    
+    // Configure watermark style - gold color, 25% opacity
+    const fontSize = Math.max(width / 10, 30);
+    ctx.font = `bold ${fontSize}px "Cormorant Garamond", Georgia, serif`;
+    ctx.fillStyle = 'rgba(200, 169, 126, 0.25)'; // Gold color (#C8A97E) with 25% opacity
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Draw main watermark
+    ctx.fillText('LUX STUDIO', 0, 0);
+    
+    // Draw additional watermarks for coverage
+    const spacing = fontSize * 3;
+    ctx.fillText('LUX STUDIO', -spacing * 1.5, -spacing);
+    ctx.fillText('LUX STUDIO', spacing * 1.5, spacing);
+    ctx.fillText('LUX STUDIO', -spacing * 1.5, spacing);
+    ctx.fillText('LUX STUDIO', spacing * 1.5, -spacing);
+    
+    ctx.restore();
+  };
+
+  const drawFooterCopyright = (ctx, width, height) => {
+    ctx.save();
+    
+    // Footer copyright text at bottom-left
+    const fontSize = Math.max(width / 40, 12);
+    ctx.font = `${fontSize}px "Outfit", sans-serif`;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    
+    // Add subtle shadow for readability
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 1;
+    
+    ctx.fillText('© luxstudio.com', 10, height - 10);
+    
+    ctx.restore();
+  };
+
+  // Event handlers for protection
+  const preventAction = (e) => {
+    e.preventDefault();
+    return false;
+  };
+
+  if (error) {
+    return (
+      <div className={`bg-[#141414] flex items-center justify-center ${className}`} style={{ minHeight: 200 }}>
+        <span className="text-[#A3A3A3] text-sm">Failed to load image</span>
+      </div>
+    );
+  }
+
   return (
     <div 
-      className={`canvas-container relative ${className}`}
-      onContextMenu={(e) => e.preventDefault()}
-      onDragStart={(e) => e.preventDefault()}
+      ref={containerRef}
+      className={`canvas-container relative select-none ${className}`}
+      onContextMenu={preventAction}
+      onDragStart={preventAction}
+      onDrag={preventAction}
+      onDragEnd={preventAction}
+      onMouseDown={(e) => e.button === 2 && preventAction(e)}
+      tabIndex={-1}
+      data-testid={`protected-photo-${photoId}`}
     >
       {!loaded && (
         <div 
           className="absolute inset-0 bg-[#141414] flex items-center justify-center"
-          style={{ 
-            width: displaySize.width || 'auto', 
-            height: displaySize.height || 200 
-          }}
+          style={{ minHeight: 200 }}
         >
           <div className="spinner" />
         </div>
@@ -154,9 +255,17 @@ const ProtectedPhoto = ({
       <canvas
         ref={canvasRef}
         className={`protected-canvas block max-w-full h-auto ${loaded ? 'opacity-100' : 'opacity-0'}`}
-        style={{ transition: 'opacity 0.3s ease' }}
-        onContextMenu={(e) => e.preventDefault()}
-        onDragStart={(e) => e.preventDefault()}
+        style={{ 
+          transition: 'opacity 0.3s ease',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          MozUserSelect: 'none',
+          msUserSelect: 'none',
+          pointerEvents: 'auto'
+        }}
+        onContextMenu={preventAction}
+        onDragStart={preventAction}
+        draggable={false}
       />
     </div>
   );

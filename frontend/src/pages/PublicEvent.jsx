@@ -38,11 +38,36 @@ const PublicEvent = () => {
     }
   };
 
-  // Disable right-click globally on this page
+  // Disable right-click, drag, and keyboard shortcuts globally on this page
   useEffect(() => {
     const handleContextMenu = (e) => e.preventDefault();
+    const handleKeyDown = (e) => {
+      // Disable Ctrl+S, Ctrl+U, Ctrl+Shift+I, F12
+      if (
+        (e.ctrlKey && e.key === 's') ||
+        (e.ctrlKey && e.key === 'u') ||
+        (e.ctrlKey && e.shiftKey && e.key === 'I') ||
+        e.key === 'F12'
+      ) {
+        e.preventDefault();
+        return false;
+      }
+    };
+    const handleDragStart = (e) => {
+      if (e.target.tagName === 'CANVAS' || e.target.closest('.canvas-container')) {
+        e.preventDefault();
+      }
+    };
+
     document.addEventListener('contextmenu', handleContextMenu);
-    return () => document.removeEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('dragstart', handleDragStart);
+    
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('dragstart', handleDragStart);
+    };
   }, []);
 
   if (loading) {
@@ -117,16 +142,15 @@ const PublicEvent = () => {
             {photos.map((photo, index) => (
               <div 
                 key={photo.photo_id}
-                className="canvas-container cursor-pointer animate-slide-up"
+                className="cursor-pointer animate-slide-up"
                 style={{ animationDelay: `${index * 0.05}s` }}
                 onClick={() => setSelectedPhoto(photo)}
                 data-testid={`photo-${photo.photo_id}`}
               >
                 <ProtectedPhoto
-                  src={photo.src}
+                  photoId={photo.photo_id}
                   width={photo.width}
                   height={photo.height}
-                  watermarkText="Lux Studio"
                 />
               </div>
             ))}
@@ -139,6 +163,7 @@ const PublicEvent = () => {
         <div 
           className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4"
           onClick={() => setSelectedPhoto(null)}
+          onContextMenu={(e) => e.preventDefault()}
           data-testid="lightbox"
         >
           <button 
@@ -154,10 +179,9 @@ const PublicEvent = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <ProtectedPhoto
-              src={selectedPhoto.src}
+              photoId={selectedPhoto.photo_id}
               width={selectedPhoto.width}
               height={selectedPhoto.height}
-              watermarkText="Lux Studio"
               className="max-h-[85vh] w-auto"
             />
           </div>

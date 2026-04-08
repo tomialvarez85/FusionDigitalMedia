@@ -517,7 +517,7 @@ async def get_public_event(event_id: str):
 
 @api_router.get("/public/events/{event_id}/photos")
 async def get_public_event_photos(event_id: str):
-    """Get photos for a published event - returns obfuscated data for canvas rendering."""
+    """Get photos for a published event - returns photo IDs only, no URLs exposed."""
     event = await db.events.find_one(
         {"event_id": event_id, "published": True}
     )
@@ -530,17 +530,64 @@ async def get_public_event_photos(event_id: str):
         {"_id": 0}
     ).to_list(1000)
     
-    # Return photo data with URLs (canvas will handle protection)
+    # Return only photo IDs and dimensions - NO URLs exposed to public
     result = []
     for photo in photos:
         result.append({
             "photo_id": photo["photo_id"],
-            "src": photo["cloudinary_url"],
             "width": photo["width"],
             "height": photo["height"]
         })
     
     return result
+
+# ======================= PHOTO PROXY ROUTE (PUBLIC) =======================
+
+from fastapi.responses import StreamingResponse
+import io
+
+@api_router.get("/photos/{photo_id}/view")
+async def view_photo(photo_id: str):
+    """
+    Proxy endpoint to stream photo from storage.
+    This prevents direct URL exposure to the browser.
+    """
+    # Find the photo
+    photo = await db.photos.find_one({"photo_id": photo_id}, {"_id": 0})
+    
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    
+    # Verify the event is published
+    event = await db.events.find_one(
+        {"event_id": photo["event_id"], "published": True}
+    )
+    
+    if not event:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    
+    # Fetch the image from Cloudinary
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(photo["cloudinary_url"], timeout=30.0)
+            if response.status_code != 200:
+                raise HTTPException(status_code=404, detail="Image not found")
+            
+            # Determine content type
+            content_type = response.headers.get("content-type", "image/jpeg")
+            
+            # Stream the image back
+            return StreamingResponse(
+                io.BytesIO(response.content),
+                media_type=content_type,
+                headers={
+                    "Cache-Control": "private, max-age=3600",
+                    "X-Content-Type-Options": "nosniff"
+                }
+            )
+        except Exception as e:
+            logger.error(f"Failed to fetch image: {e}")
+            raise HTTPException(status_code=500, detail="Failed to load image")
 
 # ======================= ROOT ROUTE =======================
 
