@@ -410,7 +410,7 @@ async def get_events(current_user: User = Depends(get_current_user)):
     
     return events
 
-@api_router.post("/events", response_model=Event)
+@api_router.post("/events", response_model=Event, status_code=201)
 async def create_event(
     event_data: EventCreate,
     current_user: User = Depends(get_current_user)
@@ -537,7 +537,7 @@ async def get_event_photos(event_id: str, current_user: User = Depends(get_curre
     
     return photos
 
-@api_router.post("/photos", response_model=Photo)
+@api_router.post("/photos", response_model=Photo, status_code=201)
 async def create_photo(
     photo_data: PhotoCreate,
     current_user: User = Depends(get_current_user)
