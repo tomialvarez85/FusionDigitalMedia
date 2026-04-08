@@ -58,7 +58,7 @@ const EventDetail = () => {
           date: new Date(eventData.date),
           description: eventData.description || "",
           photographer_name: eventData.photographer_name || "",
-          published: eventData.published
+          is_published: eventData.is_published ?? eventData.published ?? false
         });
       }
 
@@ -75,8 +75,8 @@ const EventDetail = () => {
   };
 
   const uploadToCloudinary = async (file, onProgress) => {
-    // Get signature from backend
-    const sigResponse = await fetch(`${API}/cloudinary/signature?folder=luxstudio/events`, {
+    // Get signature from backend with event_id for folder organization
+    const sigResponse = await fetch(`${API}/cloudinary/signature?event_id=${eventId}`, {
       credentials: 'include'
     });
     
@@ -148,16 +148,17 @@ const EventDetail = () => {
           }));
         });
         
-        // Save to database
+        // Save to database - store only public_id (storage_key)
         const photoResponse = await fetch(`${API}/photos`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             event_id: eventId,
-            cloudinary_url: cloudinaryResult.secure_url,
-            public_id: cloudinaryResult.public_id,
+            storage_key: cloudinaryResult.public_id,
+            original_filename: file.name,
             width: cloudinaryResult.width,
-            height: cloudinaryResult.height
+            height: cloudinaryResult.height,
+            file_size: cloudinaryResult.bytes || 0
           }),
           credentials: 'include'
         });
@@ -418,8 +419,8 @@ const EventDetail = () => {
                   <p className="text-[#A3A3A3] text-xs">Visible on public gallery</p>
                 </div>
                 <Switch
-                  checked={editData.published}
-                  onCheckedChange={(checked) => setEditData({ ...editData, published: checked })}
+                  checked={editData.is_published}
+                  onCheckedChange={(checked) => setEditData({ ...editData, is_published: checked })}
                   data-testid="edit-published-switch"
                 />
               </div>
@@ -447,9 +448,9 @@ const EventDetail = () => {
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <span className={`px-2 py-1 text-xs ${
-                    event.published ? 'bg-green-900/80 text-green-300' : 'bg-yellow-900/80 text-yellow-300'
+                    (event.is_published ?? event.published) ? 'bg-green-900/80 text-green-300' : 'bg-yellow-900/80 text-yellow-300'
                   }`}>
-                    {event.published ? 'Published' : 'Draft'}
+                    {(event.is_published ?? event.published) ? 'Published' : 'Draft'}
                   </span>
                 </div>
                 <h1 className="font-serif text-3xl text-white mb-2" data-testid="event-name">{event.name}</h1>

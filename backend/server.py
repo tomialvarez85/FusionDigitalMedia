@@ -29,10 +29,14 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 # Cloudinary configuration
+CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
+CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY")
+CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
+
 cloudinary.config(
-    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-    api_key=os.getenv("CLOUDINARY_API_KEY"),
-    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    cloud_name=CLOUDINARY_CLOUD_NAME,
+    api_key=CLOUDINARY_API_KEY,
+    api_secret=CLOUDINARY_API_SECRET,
     secure=True
 )
 
@@ -41,7 +45,7 @@ JWT_SECRET = os.environ.get("JWT_SECRET", "lux-studio-secret-key-change-in-produ
 JWT_ALGORITHM = "HS256"
 
 # Create the main app
-app = FastAPI()
+app = FastAPI(title="Lux Studio API", version="1.0.0")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -53,7 +57,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ======================= PASSWORD & JWT HELPERS =======================
+# ======================= HELPER FUNCTIONS =======================
+
+def get_cloudinary_url(storage_key: str) -> str:
+    """Reconstruct Cloudinary URL from storage_key (public_id)"""
+    if not CLOUDINARY_CLOUD_NAME:
+        return ""
+    return f"https://res.cloudinary.com/{CLOUDINARY_CLOUD_NAME}/image/upload/{storage_key}"
 
 def hash_password(password: str) -> str:
     salt = bcrypt.gensalt()
@@ -63,18 +73,18 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
-def create_access_token(user_id: str, email: str) -> str:
+def create_access_token(admin_id: str, email: str) -> str:
     payload = {
-        "sub": user_id, 
+        "sub": admin_id, 
         "email": email, 
         "exp": datetime.now(timezone.utc) + timedelta(hours=24),
         "type": "access"
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-def create_refresh_token(user_id: str) -> str:
+def create_refresh_token(admin_id: str) -> str:
     payload = {
-        "sub": user_id, 
+        "sub": admin_id, 
         "exp": datetime.now(timezone.utc) + timedelta(days=7), 
         "type": "refresh"
     }
@@ -82,14 +92,42 @@ def create_refresh_token(user_id: str) -> str:
 
 # ======================= MODELS =======================
 
-class User(BaseModel):
+# Database Schema Models
+class Admin(BaseModel):
+    """Admin user schema - stored in 'admins' collection"""
     model_config = ConfigDict(extra="ignore")
-    user_id: str
+    admin_id: str
     email: str
     name: str
-    role: str = "admin"
     created_at: datetime
 
+class Event(BaseModel):
+    """Event schema - stored in 'events' collection"""
+    model_config = ConfigDict(extra="ignore")
+    event_id: str
+    name: str
+    date: str  # YYYY-MM-DD format
+    description: str = ""
+    photographer_name: str = ""
+    is_published: bool = False
+    cover_photo_id: Optional[str] = None
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+
+class Photo(BaseModel):
+    """Photo schema - stored in 'photos' collection"""
+    model_config = ConfigDict(extra="ignore")
+    photo_id: str
+    event_id: str
+    storage_key: str  # Cloudinary public_id only
+    original_filename: str = ""
+    width: int = 0
+    height: int = 0
+    file_size: int = 0
+    uploaded_at: datetime
+
+# Request/Response Models
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
@@ -99,59 +137,33 @@ class RegisterRequest(BaseModel):
     password: str
     name: str
 
-class Event(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    event_id: str
-    name: str
-    date: str
-    description: str
-    photographer_name: str
-    cover_image: Optional[str] = None
-    cover_public_id: Optional[str] = None
-    published: bool = True
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
-
 class EventCreate(BaseModel):
     name: str
     date: str
     description: str = ""
     photographer_name: str = ""
-    cover_image: Optional[str] = None
-    cover_public_id: Optional[str] = None
-    published: bool = True
+    is_published: bool = False
 
 class EventUpdate(BaseModel):
     name: Optional[str] = None
     date: Optional[str] = None
     description: Optional[str] = None
     photographer_name: Optional[str] = None
-    cover_image: Optional[str] = None
-    cover_public_id: Optional[str] = None
-    published: Optional[bool] = None
-
-class Photo(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    photo_id: str
-    event_id: str
-    cloudinary_url: str
-    public_id: str
-    width: int
-    height: int
-    created_at: datetime
+    is_published: Optional[bool] = None
+    cover_photo_id: Optional[str] = None
 
 class PhotoCreate(BaseModel):
     event_id: str
-    cloudinary_url: str
-    public_id: str
-    width: int
-    height: int
+    storage_key: str  # Cloudinary public_id
+    original_filename: str = ""
+    width: int = 0
+    height: int = 0
+    file_size: int = 0
 
 # ======================= AUTH HELPERS =======================
 
-async def get_current_user(request: Request) -> User:
-    """Get the current authenticated user from JWT token."""
+async def get_current_admin(request: Request) -> Admin:
+    """Get the current authenticated admin from JWT token."""
     token = request.cookies.get("access_token")
     
     if not token:
@@ -167,20 +179,27 @@ async def get_current_user(request: Request) -> User:
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Invalid token type")
         
-        user_id = payload.get("sub")
-        user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        admin_id = payload.get("sub")
         
-        if not user_doc:
-            raise HTTPException(status_code=401, detail="User not found")
+        # Check admins collection first, fallback to users for backward compatibility
+        admin_doc = await db.admins.find_one({"admin_id": admin_id}, {"_id": 0})
+        if not admin_doc:
+            # Fallback: check users collection
+            admin_doc = await db.users.find_one({"user_id": admin_id}, {"_id": 0})
+            if admin_doc:
+                admin_doc["admin_id"] = admin_doc.pop("user_id", admin_id)
         
-        # Remove password_hash from response
-        user_doc.pop("password_hash", None)
+        if not admin_doc:
+            raise HTTPException(status_code=401, detail="Admin not found")
+        
+        # Remove sensitive data
+        admin_doc.pop("password_hash", None)
         
         # Convert datetime if needed
-        if isinstance(user_doc.get('created_at'), str):
-            user_doc['created_at'] = datetime.fromisoformat(user_doc['created_at'])
+        if isinstance(admin_doc.get('created_at'), str):
+            admin_doc['created_at'] = datetime.fromisoformat(admin_doc['created_at'])
         
-        return User(**user_doc)
+        return Admin(**admin_doc)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
@@ -193,17 +212,24 @@ async def login(request: LoginRequest, response: Response):
     """Login with email and password."""
     email = request.email.lower()
     
-    user_doc = await db.users.find_one({"email": email}, {"_id": 0})
+    # Check admins collection first, fallback to users
+    admin_doc = await db.admins.find_one({"email": email}, {"_id": 0})
+    if not admin_doc:
+        admin_doc = await db.users.find_one({"email": email}, {"_id": 0})
+        if admin_doc:
+            admin_doc["admin_id"] = admin_doc.pop("user_id", "")
     
-    if not user_doc:
+    if not admin_doc:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     
-    if not verify_password(request.password, user_doc.get("password_hash", "")):
+    if not verify_password(request.password, admin_doc.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    admin_id = admin_doc.get("admin_id", admin_doc.get("user_id", ""))
     
     # Create tokens
-    access_token = create_access_token(user_doc["user_id"], email)
-    refresh_token = create_refresh_token(user_doc["user_id"])
+    access_token = create_access_token(admin_id, email)
+    refresh_token = create_refresh_token(admin_id)
     
     # Set cookies
     response.set_cookie(
@@ -225,39 +251,41 @@ async def login(request: LoginRequest, response: Response):
         path="/"
     )
     
-    # Return user without password
-    user_doc.pop("password_hash", None)
-    return user_doc
+    # Return admin without password
+    admin_doc.pop("password_hash", None)
+    return admin_doc
 
 @api_router.post("/auth/register")
 async def register(request: RegisterRequest, response: Response):
     """Register a new admin user."""
     email = request.email.lower()
     
-    # Check if user exists
-    existing = await db.users.find_one({"email": email})
+    # Check if admin exists in either collection
+    existing = await db.admins.find_one({"email": email})
+    if not existing:
+        existing = await db.users.find_one({"email": email})
+    
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Create user
-    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    # Create admin
+    admin_id = f"admin_{uuid.uuid4().hex[:12]}"
     password_hash = hash_password(request.password)
     now = datetime.now(timezone.utc)
     
-    user_doc = {
-        "user_id": user_id,
+    admin_doc = {
+        "admin_id": admin_id,
         "email": email,
         "name": request.name,
         "password_hash": password_hash,
-        "role": "admin",
         "created_at": now.isoformat()
     }
     
-    await db.users.insert_one(user_doc)
+    await db.admins.insert_one(admin_doc)
     
     # Create tokens
-    access_token = create_access_token(user_id, email)
-    refresh_token = create_refresh_token(user_id)
+    access_token = create_access_token(admin_id, email)
+    refresh_token = create_refresh_token(admin_id)
     
     # Set cookies
     response.set_cookie(
@@ -279,15 +307,15 @@ async def register(request: RegisterRequest, response: Response):
         path="/"
     )
     
-    # Return user without password
-    user_doc.pop("password_hash", None)
-    user_doc.pop("_id", None)
-    return user_doc
+    # Return admin without password
+    admin_doc.pop("password_hash", None)
+    admin_doc.pop("_id", None)
+    return admin_doc
 
 @api_router.get("/auth/me")
-async def get_me(current_user: User = Depends(get_current_user)):
-    """Get current authenticated user."""
-    return current_user.model_dump()
+async def get_me(current_admin: Admin = Depends(get_current_admin)):
+    """Get current authenticated admin."""
+    return current_admin.model_dump()
 
 @api_router.post("/auth/logout")
 async def logout(response: Response):
@@ -309,14 +337,18 @@ async def refresh_token(request: Request, response: Response):
         if payload.get("type") != "refresh":
             raise HTTPException(status_code=401, detail="Invalid token type")
         
-        user_id = payload.get("sub")
-        user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        admin_id = payload.get("sub")
         
-        if not user_doc:
-            raise HTTPException(status_code=401, detail="User not found")
+        # Find admin
+        admin_doc = await db.admins.find_one({"admin_id": admin_id}, {"_id": 0})
+        if not admin_doc:
+            admin_doc = await db.users.find_one({"user_id": admin_id}, {"_id": 0})
+        
+        if not admin_doc:
+            raise HTTPException(status_code=401, detail="Admin not found")
         
         # Create new access token
-        access_token = create_access_token(user_id, user_doc["email"])
+        access_token = create_access_token(admin_id, admin_doc["email"])
         
         response.set_cookie(
             key="access_token",
@@ -338,15 +370,23 @@ async def refresh_token(request: Request, response: Response):
 
 @api_router.get("/cloudinary/signature")
 async def generate_signature(
-    resource_type: str = Query("image", enum=["image", "video"]),
-    folder: str = "luxstudio",
-    current_user: User = Depends(get_current_user)
+    event_id: str = Query(..., description="Event ID for folder organization"),
+    current_admin: Admin = Depends(get_current_admin)
 ):
     """Generate a signed upload signature for Cloudinary."""
-    ALLOWED_FOLDERS = ("luxstudio", "luxstudio/events", "luxstudio/covers")
+    if not CLOUDINARY_API_SECRET:
+        raise HTTPException(status_code=500, detail="Cloudinary not configured")
     
-    if not any(folder.startswith(f) for f in ALLOWED_FOLDERS):
-        raise HTTPException(status_code=400, detail="Invalid folder path")
+    # Verify event belongs to admin
+    event = await db.events.find_one({
+        "event_id": event_id,
+        "created_by": current_admin.admin_id
+    })
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Folder structure: lux-studio/events/{event_id}/
+    folder = f"lux-studio/events/{event_id}"
     
     timestamp = int(time.time())
     params = {
@@ -356,28 +396,27 @@ async def generate_signature(
     
     signature = cloudinary.utils.api_sign_request(
         params,
-        os.getenv("CLOUDINARY_API_SECRET")
+        CLOUDINARY_API_SECRET
     )
     
     return {
         "signature": signature,
         "timestamp": timestamp,
-        "cloud_name": os.getenv("CLOUDINARY_CLOUD_NAME"),
-        "api_key": os.getenv("CLOUDINARY_API_KEY"),
-        "folder": folder,
-        "resource_type": resource_type
+        "cloud_name": CLOUDINARY_CLOUD_NAME,
+        "api_key": CLOUDINARY_API_KEY,
+        "folder": folder
     }
 
 # ======================= DASHBOARD STATS =======================
 
 @api_router.get("/dashboard/stats")
-async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
+async def get_dashboard_stats(current_admin: Admin = Depends(get_current_admin)):
     """Get dashboard statistics."""
-    events_count = await db.events.count_documents({"created_by": current_user.user_id})
+    events_count = await db.events.count_documents({"created_by": current_admin.admin_id})
     
-    # Get photo counts per event for current user's events
+    # Get photo counts for current admin's events
     user_events = await db.events.find(
-        {"created_by": current_user.user_id},
+        {"created_by": current_admin.admin_id},
         {"_id": 0, "event_id": 1}
     ).to_list(1000)
     
@@ -391,105 +430,110 @@ async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
 
 # ======================= EVENT ROUTES (ADMIN) =======================
 
-@api_router.get("/events", response_model=List[Event])
-async def get_events(current_user: User = Depends(get_current_user)):
-    """Get all events for the current admin user."""
+@api_router.get("/events")
+async def get_events(current_admin: Admin = Depends(get_current_admin)):
+    """Get all events for the current admin."""
     events = await db.events.find(
-        {"created_by": current_user.user_id},
+        {"created_by": current_admin.admin_id},
         {"_id": 0}
     ).sort("created_at", -1).to_list(1000)
     
-    # Get photo counts for each event
+    # Get photo counts and add cover image URL
     for event in events:
         count = await db.photos.count_documents({"event_id": event["event_id"]})
         event["photo_count"] = count
-        if isinstance(event.get('created_at'), str):
-            event['created_at'] = datetime.fromisoformat(event['created_at'])
-        if isinstance(event.get('updated_at'), str):
-            event['updated_at'] = datetime.fromisoformat(event['updated_at'])
+        
+        # Handle backward compatibility (published vs is_published)
+        if "published" in event and "is_published" not in event:
+            event["is_published"] = event.pop("published")
+        
+        # Get cover photo URL if set
+        if event.get("cover_photo_id"):
+            cover = await db.photos.find_one({"photo_id": event["cover_photo_id"]}, {"_id": 0})
+            if cover:
+                event["cover_image"] = get_cloudinary_url(cover["storage_key"])
     
     return events
 
-@api_router.post("/events", response_model=Event, status_code=201)
+@api_router.post("/events", status_code=201)
 async def create_event(
     event_data: EventCreate,
-    current_user: User = Depends(get_current_user)
+    current_admin: Admin = Depends(get_current_admin)
 ):
     """Create a new event."""
     now = datetime.now(timezone.utc)
+    event_id = f"evt_{uuid.uuid4().hex[:12]}"
+    
     event = {
-        "event_id": f"evt_{uuid.uuid4().hex[:12]}",
+        "event_id": event_id,
         "name": event_data.name,
         "date": event_data.date,
         "description": event_data.description,
         "photographer_name": event_data.photographer_name,
-        "cover_image": event_data.cover_image,
-        "cover_public_id": event_data.cover_public_id,
-        "published": event_data.published,
-        "created_by": current_user.user_id,
+        "is_published": event_data.is_published,
+        "cover_photo_id": None,
+        "created_by": current_admin.admin_id,
         "created_at": now.isoformat(),
         "updated_at": now.isoformat()
     }
     
     await db.events.insert_one(event)
     event.pop("_id", None)
-    event["created_at"] = now
-    event["updated_at"] = now
+    event["photo_count"] = 0
     return event
 
-@api_router.get("/events/{event_id}", response_model=Event)
-async def get_event(event_id: str, current_user: User = Depends(get_current_user)):
+@api_router.get("/events/{event_id}")
+async def get_event(event_id: str, current_admin: Admin = Depends(get_current_admin)):
     """Get a specific event."""
     event = await db.events.find_one(
-        {"event_id": event_id, "created_by": current_user.user_id},
+        {"event_id": event_id, "created_by": current_admin.admin_id},
         {"_id": 0}
     )
     
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     
+    # Handle backward compatibility
+    if "published" in event and "is_published" not in event:
+        event["is_published"] = event.pop("published")
+    
     # Get photo count
     count = await db.photos.count_documents({"event_id": event_id})
     event["photo_count"] = count
     
-    if isinstance(event.get('created_at'), str):
-        event['created_at'] = datetime.fromisoformat(event['created_at'])
-    if isinstance(event.get('updated_at'), str):
-        event['updated_at'] = datetime.fromisoformat(event['updated_at'])
+    # Get cover photo URL
+    if event.get("cover_photo_id"):
+        cover = await db.photos.find_one({"photo_id": event["cover_photo_id"]}, {"_id": 0})
+        if cover:
+            event["cover_image"] = get_cloudinary_url(cover["storage_key"])
     
     return event
 
-@api_router.put("/events/{event_id}", response_model=Event)
+@api_router.put("/events/{event_id}")
 async def update_event(
     event_id: str,
     event_data: EventUpdate,
-    current_user: User = Depends(get_current_user)
+    current_admin: Admin = Depends(get_current_admin)
 ):
     """Update an event."""
     update_dict = {k: v for k, v in event_data.model_dump().items() if v is not None}
     update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
     
     result = await db.events.update_one(
-        {"event_id": event_id, "created_by": current_user.user_id},
+        {"event_id": event_id, "created_by": current_admin.admin_id},
         {"$set": update_dict}
     )
     
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Event not found")
     
-    event = await db.events.find_one({"event_id": event_id}, {"_id": 0})
-    if isinstance(event.get('created_at'), str):
-        event['created_at'] = datetime.fromisoformat(event['created_at'])
-    if isinstance(event.get('updated_at'), str):
-        event['updated_at'] = datetime.fromisoformat(event['updated_at'])
-    
-    return event
+    return await get_event(event_id, current_admin)
 
 @api_router.delete("/events/{event_id}")
-async def delete_event(event_id: str, current_user: User = Depends(get_current_user)):
+async def delete_event(event_id: str, current_admin: Admin = Depends(get_current_admin)):
     """Delete an event and all its photos."""
     event = await db.events.find_one(
-        {"event_id": event_id, "created_by": current_user.user_id},
+        {"event_id": event_id, "created_by": current_admin.admin_id},
         {"_id": 0}
     )
     
@@ -500,16 +544,11 @@ async def delete_event(event_id: str, current_user: User = Depends(get_current_u
     photos = await db.photos.find({"event_id": event_id}, {"_id": 0}).to_list(1000)
     for photo in photos:
         try:
-            cloudinary.uploader.destroy(photo["public_id"], invalidate=True)
+            storage_key = photo.get("storage_key") or photo.get("public_id")
+            if storage_key:
+                cloudinary.uploader.destroy(storage_key, invalidate=True)
         except Exception as e:
             logger.error(f"Failed to delete photo from Cloudinary: {e}")
-    
-    # Delete cover image if exists
-    if event.get("cover_public_id"):
-        try:
-            cloudinary.uploader.destroy(event["cover_public_id"], invalidate=True)
-        except Exception as e:
-            logger.error(f"Failed to delete cover from Cloudinary: {e}")
     
     # Delete from database
     await db.photos.delete_many({"event_id": event_id})
@@ -519,11 +558,11 @@ async def delete_event(event_id: str, current_user: User = Depends(get_current_u
 
 # ======================= PHOTO ROUTES (ADMIN) =======================
 
-@api_router.get("/events/{event_id}/photos", response_model=List[Photo])
-async def get_event_photos(event_id: str, current_user: User = Depends(get_current_user)):
-    """Get all photos for an event."""
+@api_router.get("/events/{event_id}/photos")
+async def get_event_photos(event_id: str, current_admin: Admin = Depends(get_current_admin)):
+    """Get all photos for an event (admin view with full URLs)."""
     event = await db.events.find_one(
-        {"event_id": event_id, "created_by": current_user.user_id}
+        {"event_id": event_id, "created_by": current_admin.admin_id}
     )
     
     if not event:
@@ -531,43 +570,48 @@ async def get_event_photos(event_id: str, current_user: User = Depends(get_curre
     
     photos = await db.photos.find({"event_id": event_id}, {"_id": 0}).to_list(1000)
     
+    # Add full URLs for admin view
     for photo in photos:
-        if isinstance(photo.get('created_at'), str):
-            photo['created_at'] = datetime.fromisoformat(photo['created_at'])
+        storage_key = photo.get("storage_key") or photo.get("public_id")
+        if storage_key:
+            photo["cloudinary_url"] = get_cloudinary_url(storage_key)
     
     return photos
 
-@api_router.post("/photos", response_model=Photo, status_code=201)
+@api_router.post("/photos", status_code=201)
 async def create_photo(
     photo_data: PhotoCreate,
-    current_user: User = Depends(get_current_user)
+    current_admin: Admin = Depends(get_current_admin)
 ):
     """Add a photo to an event."""
     event = await db.events.find_one(
-        {"event_id": photo_data.event_id, "created_by": current_user.user_id}
+        {"event_id": photo_data.event_id, "created_by": current_admin.admin_id}
     )
     
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     
     now = datetime.now(timezone.utc)
+    photo_id = f"photo_{uuid.uuid4().hex[:12]}"
+    
     photo = {
-        "photo_id": f"photo_{uuid.uuid4().hex[:12]}",
+        "photo_id": photo_id,
         "event_id": photo_data.event_id,
-        "cloudinary_url": photo_data.cloudinary_url,
-        "public_id": photo_data.public_id,
+        "storage_key": photo_data.storage_key,
+        "original_filename": photo_data.original_filename,
         "width": photo_data.width,
         "height": photo_data.height,
-        "created_at": now.isoformat()
+        "file_size": photo_data.file_size,
+        "uploaded_at": now.isoformat()
     }
     
     await db.photos.insert_one(photo)
     photo.pop("_id", None)
-    photo["created_at"] = now
+    photo["cloudinary_url"] = get_cloudinary_url(photo_data.storage_key)
     return photo
 
 @api_router.delete("/photos/{photo_id}")
-async def delete_photo(photo_id: str, current_user: User = Depends(get_current_user)):
+async def delete_photo(photo_id: str, current_admin: Admin = Depends(get_current_admin)):
     """Delete a photo."""
     photo = await db.photos.find_one({"photo_id": photo_id}, {"_id": 0})
     
@@ -576,7 +620,7 @@ async def delete_photo(photo_id: str, current_user: User = Depends(get_current_u
     
     # Verify ownership
     event = await db.events.find_one(
-        {"event_id": photo["event_id"], "created_by": current_user.user_id}
+        {"event_id": photo["event_id"], "created_by": current_admin.admin_id}
     )
     
     if not event:
@@ -584,7 +628,9 @@ async def delete_photo(photo_id: str, current_user: User = Depends(get_current_u
     
     # Delete from Cloudinary
     try:
-        cloudinary.uploader.destroy(photo["public_id"], invalidate=True)
+        storage_key = photo.get("storage_key") or photo.get("public_id")
+        if storage_key:
+            cloudinary.uploader.destroy(storage_key, invalidate=True)
     except Exception as e:
         logger.error(f"Failed to delete from Cloudinary: {e}")
     
@@ -598,15 +644,26 @@ async def delete_photo(photo_id: str, current_user: User = Depends(get_current_u
 @api_router.get("/public/events")
 async def get_public_events():
     """Get all published events for public view."""
+    # Query supports both old 'published' and new 'is_published' fields
     events = await db.events.find(
-        {"published": True},
+        {"$or": [{"is_published": True}, {"published": True}]},
         {"_id": 0, "created_by": 0}
     ).sort("date", -1).to_list(1000)
     
-    # Get photo counts for each event
+    # Get photo counts and normalize fields
     for event in events:
         count = await db.photos.count_documents({"event_id": event["event_id"]})
         event["photo_count"] = count
+        
+        # Normalize to is_published
+        if "published" in event:
+            event["is_published"] = event.pop("published", True)
+        
+        # Get cover photo URL
+        if event.get("cover_photo_id"):
+            cover = await db.photos.find_one({"photo_id": event["cover_photo_id"]}, {"_id": 0})
+            if cover:
+                event["cover_image"] = get_cloudinary_url(cover.get("storage_key", ""))
     
     return events
 
@@ -614,7 +671,7 @@ async def get_public_events():
 async def get_public_event(event_id: str):
     """Get a specific published event."""
     event = await db.events.find_one(
-        {"event_id": event_id, "published": True},
+        {"event_id": event_id, "$or": [{"is_published": True}, {"published": True}]},
         {"_id": 0, "created_by": 0}
     )
     
@@ -624,13 +681,17 @@ async def get_public_event(event_id: str):
     count = await db.photos.count_documents({"event_id": event_id})
     event["photo_count"] = count
     
+    # Normalize
+    if "published" in event:
+        event["is_published"] = event.pop("published", True)
+    
     return event
 
 @api_router.get("/public/events/{event_id}/photos")
 async def get_public_event_photos(event_id: str):
     """Get photos for a published event - returns photo IDs only, no URLs exposed."""
     event = await db.events.find_one(
-        {"event_id": event_id, "published": True}
+        {"event_id": event_id, "$or": [{"is_published": True}, {"published": True}]}
     )
     
     if not event:
@@ -646,8 +707,8 @@ async def get_public_event_photos(event_id: str):
     for photo in photos:
         result.append({
             "photo_id": photo["photo_id"],
-            "width": photo["width"],
-            "height": photo["height"]
+            "width": photo.get("width", 800),
+            "height": photo.get("height", 600)
         })
     
     return result
@@ -658,7 +719,7 @@ async def get_public_event_photos(event_id: str):
 async def view_photo(photo_id: str):
     """
     Proxy endpoint to stream photo from storage.
-    This prevents direct URL exposure to the browser.
+    Reconstructs URL server-side - never exposed to client.
     """
     # Find the photo
     photo = await db.photos.find_one({"photo_id": photo_id}, {"_id": 0})
@@ -668,16 +729,30 @@ async def view_photo(photo_id: str):
     
     # Verify the event is published
     event = await db.events.find_one(
-        {"event_id": photo["event_id"], "published": True}
+        {"event_id": photo["event_id"], "$or": [{"is_published": True}, {"published": True}]}
     )
     
     if not event:
         raise HTTPException(status_code=404, detail="Photo not found")
     
+    # Reconstruct URL from storage_key (public_id)
+    storage_key = photo.get("storage_key") or photo.get("public_id")
+    if not storage_key:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    
+    # Support both old (full URL) and new (storage_key only) formats
+    if storage_key.startswith("http"):
+        cloudinary_url = storage_key
+    else:
+        cloudinary_url = get_cloudinary_url(storage_key)
+    
+    if not cloudinary_url:
+        raise HTTPException(status_code=500, detail="Storage not configured")
+    
     # Fetch the image from Cloudinary
     async with httpx.AsyncClient() as http_client:
         try:
-            response = await http_client.get(photo["cloudinary_url"], timeout=30.0)
+            response = await http_client.get(cloudinary_url, timeout=30.0)
             if response.status_code != 200:
                 raise HTTPException(status_code=404, detail="Image not found")
             
@@ -693,6 +768,8 @@ async def view_photo(photo_id: str):
                     "X-Content-Type-Options": "nosniff"
                 }
             )
+        except httpx.TimeoutException:
+            raise HTTPException(status_code=504, detail="Image load timeout")
         except Exception as e:
             logger.error(f"Failed to fetch image: {e}")
             raise HTTPException(status_code=500, detail="Failed to load image")
@@ -701,7 +778,7 @@ async def view_photo(photo_id: str):
 
 @api_router.get("/")
 async def root():
-    return {"message": "Lux Studio API"}
+    return {"message": "Lux Studio API", "version": "1.0.0"}
 
 # Include the router in the main app
 app.include_router(api_router)
@@ -723,33 +800,30 @@ async def startup_event():
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@luxstudio.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "Admin123!")
     
-    existing = await db.users.find_one({"email": admin_email})
+    # Check both collections for existing admin
+    existing = await db.admins.find_one({"email": admin_email})
+    if not existing:
+        existing = await db.users.find_one({"email": admin_email})
     
     if existing is None:
-        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        admin_id = f"admin_{uuid.uuid4().hex[:12]}"
         hashed = hash_password(admin_password)
         now = datetime.now(timezone.utc)
         
-        await db.users.insert_one({
-            "user_id": user_id,
+        await db.admins.insert_one({
+            "admin_id": admin_id,
             "email": admin_email,
             "name": "Admin",
             "password_hash": hashed,
-            "role": "admin",
             "created_at": now.isoformat()
         })
         logger.info(f"Admin user created: {admin_email}")
-    elif not verify_password(admin_password, existing.get("password_hash", "")):
-        # Update password if changed in env
-        await db.users.update_one(
-            {"email": admin_email},
-            {"$set": {"password_hash": hash_password(admin_password)}}
-        )
-        logger.info(f"Admin password updated for: {admin_email}")
     
     # Create indexes
-    await db.users.create_index("email", unique=True)
+    await db.admins.create_index("email", unique=True)
+    await db.admins.create_index("admin_id", unique=True)
     await db.events.create_index("event_id", unique=True)
+    await db.events.create_index("created_by")
     await db.photos.create_index("photo_id", unique=True)
     await db.photos.create_index("event_id")
 

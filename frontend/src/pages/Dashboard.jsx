@@ -205,9 +205,9 @@ const Dashboard = () => {
                   
                   {/* Status Badge */}
                   <div className={`absolute top-3 right-3 px-2 py-1 text-xs ${
-                    event.published ? 'bg-green-900/80 text-green-300' : 'bg-yellow-900/80 text-yellow-300'
+                    (event.is_published ?? event.published) ? 'bg-green-900/80 text-green-300' : 'bg-yellow-900/80 text-yellow-300'
                   }`}>
-                    {event.published ? 'Published' : 'Draft'}
+                    {(event.is_published ?? event.published) ? 'Published' : 'Draft'}
                   </div>
                 </div>
 

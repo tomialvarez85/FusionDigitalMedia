@@ -20,7 +20,7 @@ const CreateEvent = () => {
     date: new Date(),
     description: "",
     photographer_name: "",
-    published: false
+    is_published: false
   });
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -158,8 +158,8 @@ const CreateEvent = () => {
                 <p className="text-[#A3A3A3] text-xs mt-1">Make this event visible on the public gallery</p>
               </div>
               <Switch
-                checked={formData.published}
-                onCheckedChange={(checked) => setFormData({ ...formData, published: checked })}
+                checked={formData.is_published}
+                onCheckedChange={(checked) => setFormData({ ...formData, is_published: checked })}
                 data-testid="event-published-switch"
               />
             </div>

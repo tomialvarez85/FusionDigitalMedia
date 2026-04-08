@@ -99,7 +99,7 @@ class LuxStudioAPITester:
         
         # Verify user data structure
         if user_data and isinstance(user_data, dict):
-            required_fields = ['user_id', 'email', 'name', 'role']
+            required_fields = ['admin_id', 'email', 'name']
             missing_fields = [field for field in required_fields if field not in user_data]
             if missing_fields:
                 self.log_test("Login response structure", False, f"Missing fields: {missing_fields}")
@@ -150,7 +150,7 @@ class LuxStudioAPITester:
             "date": "2024-12-25",
             "description": "Test event for API testing",
             "photographer_name": "Test Photographer",
-            "published": True
+            "is_published": True
         }
         
         success, created_event = self.test_api_endpoint(
@@ -202,11 +202,31 @@ class LuxStudioAPITester:
             description="Get event photos (empty)"
         )
         
-        # Test cloudinary signature generation
-        self.test_api_endpoint(
-            'GET', 'cloudinary/signature?folder=luxstudio/events', 200,
-            description="Get Cloudinary upload signature"
+        # Test cloudinary signature generation (requires event_id parameter)
+        if self.test_event_id:
+            self.test_api_endpoint(
+                'GET', f'cloudinary/signature?event_id={self.test_event_id}', 200,
+                description="Get Cloudinary upload signature with event_id"
+            )
+        
+        # Test creating a photo
+        photo_data = {
+            "event_id": self.test_event_id,
+            "storage_key": "test-photo-key",
+            "original_filename": "test.jpg",
+            "width": 800,
+            "height": 600,
+            "file_size": 1024
+        }
+        
+        success, created_photo = self.test_api_endpoint(
+            'POST', 'photos', 201, photo_data,
+            "Create photo with storage_key"
         )
+        
+        if success and created_photo:
+            self.test_photo_id = created_photo.get('photo_id')
+            print(f"   📸 Created photo ID: {self.test_photo_id}")
 
     def test_public_endpoints(self):
         """Test public (non-authenticated) endpoints"""
@@ -226,6 +246,15 @@ class LuxStudioAPITester:
     def test_cleanup(self):
         """Clean up test data"""
         print("\n🧹 Cleaning up test data...")
+        
+        # Delete test photo first if it exists
+        if self.test_photo_id:
+            success, _ = self.test_api_endpoint(
+                'DELETE', f'photos/{self.test_photo_id}', 200,
+                description="Delete test photo"
+            )
+            if success:
+                print(f"   🗑️  Deleted test photo: {self.test_photo_id}")
         
         if self.test_event_id:
             success, _ = self.test_api_endpoint(
