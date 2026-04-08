@@ -426,23 +426,51 @@ async def get_dashboard_stats(current_admin: Admin = Depends(get_current_admin))
 
 @api_router.get("/events")
 async def get_events(current_admin: Admin = Depends(get_current_admin)):
-    """Get all events for the current admin."""
-    events = await db.events.find(
-        {"created_by": current_admin.admin_id},
-        {"_id": 0}
-    ).sort("created_at", -1).to_list(1000)
+    """Get all events for the current admin with optimized queries."""
+    # Use aggregation to get events with photo counts in a single query
+    pipeline = [
+        {"$match": {"created_by": current_admin.admin_id}},
+        {"$lookup": {
+            "from": "photos",
+            "localField": "event_id",
+            "foreignField": "event_id",
+            "as": "photos"
+        }},
+        {"$addFields": {
+            "photo_count": {"$size": "$photos"}
+        }},
+        {"$project": {
+            "_id": 0,
+            "photos": 0  # Remove photos array, keep only count
+        }},
+        {"$sort": {"created_at": -1}}
+    ]
     
+    events = await db.events.aggregate(pipeline).to_list(1000)
+    
+    # Get all cover photo IDs that exist
+    cover_photo_ids = [e["cover_photo_id"] for e in events if e.get("cover_photo_id")]
+    
+    # Batch fetch cover photos if any exist
+    cover_photos = {}
+    if cover_photo_ids:
+        covers = await db.photos.find(
+            {"photo_id": {"$in": cover_photo_ids}},
+            {"_id": 0, "photo_id": 1, "storage_key": 1}
+        ).to_list(len(cover_photo_ids))
+        cover_photos = {c["photo_id"]: c.get("storage_key") for c in covers}
+    
+    # Process events
     for event in events:
-        count = await db.photos.count_documents({"event_id": event["event_id"]})
-        event["photo_count"] = count
-        
+        # Handle backward compatibility
         if "published" in event and "is_published" not in event:
             event["is_published"] = event.pop("published")
         
-        if event.get("cover_photo_id"):
-            cover = await db.photos.find_one({"photo_id": event["cover_photo_id"]}, {"_id": 0})
-            if cover:
-                event["cover_image"] = get_cloudinary_url(cover["storage_key"])
+        # Add cover image URL
+        if event.get("cover_photo_id") and event["cover_photo_id"] in cover_photos:
+            storage_key = cover_photos[event["cover_photo_id"]]
+            if storage_key:
+                event["cover_image"] = get_cloudinary_url(storage_key)
     
     return events
 
@@ -625,23 +653,52 @@ async def delete_photo(photo_id: str, current_admin: Admin = Depends(get_current
 
 @api_router.get("/public/events")
 async def get_public_events():
-    """Get all published events for public view."""
-    events = await db.events.find(
-        {"$or": [{"is_published": True}, {"published": True}]},
-        {"_id": 0, "created_by": 0}
-    ).sort("date", -1).to_list(1000)
+    """Get all published events for public view with optimized queries."""
+    # Use aggregation to get events with photo counts in a single query
+    pipeline = [
+        {"$match": {"$or": [{"is_published": True}, {"published": True}]}},
+        {"$lookup": {
+            "from": "photos",
+            "localField": "event_id",
+            "foreignField": "event_id",
+            "as": "photos"
+        }},
+        {"$addFields": {
+            "photo_count": {"$size": "$photos"}
+        }},
+        {"$project": {
+            "_id": 0,
+            "created_by": 0,
+            "photos": 0  # Remove photos array, keep only count
+        }},
+        {"$sort": {"date": -1}}
+    ]
     
+    events = await db.events.aggregate(pipeline).to_list(1000)
+    
+    # Get all cover photo IDs that exist
+    cover_photo_ids = [e["cover_photo_id"] for e in events if e.get("cover_photo_id")]
+    
+    # Batch fetch cover photos if any exist
+    cover_photos = {}
+    if cover_photo_ids:
+        covers = await db.photos.find(
+            {"photo_id": {"$in": cover_photo_ids}},
+            {"_id": 0, "photo_id": 1, "storage_key": 1}
+        ).to_list(len(cover_photo_ids))
+        cover_photos = {c["photo_id"]: c.get("storage_key") for c in covers}
+    
+    # Process events
     for event in events:
-        count = await db.photos.count_documents({"event_id": event["event_id"]})
-        event["photo_count"] = count
-        
+        # Handle backward compatibility
         if "published" in event:
             event["is_published"] = event.pop("published", True)
         
-        if event.get("cover_photo_id"):
-            cover = await db.photos.find_one({"photo_id": event["cover_photo_id"]}, {"_id": 0})
-            if cover:
-                event["cover_image"] = get_cloudinary_url(cover.get("storage_key", ""))
+        # Add cover image URL
+        if event.get("cover_photo_id") and event["cover_photo_id"] in cover_photos:
+            storage_key = cover_photos[event["cover_photo_id"]]
+            if storage_key:
+                event["cover_image"] = get_cloudinary_url(storage_key)
     
     return events
 
