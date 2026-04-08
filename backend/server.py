@@ -1,12 +1,16 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, Query
-from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, Query
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
-from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -15,9 +19,9 @@ import cloudinary.utils
 import cloudinary.uploader
 import time
 import httpx
-
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+import bcrypt
+import jwt
+import io
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -32,6 +36,10 @@ cloudinary.config(
     secure=True
 )
 
+# JWT Configuration
+JWT_SECRET = os.environ.get("JWT_SECRET", "lux-studio-secret-key-change-in-production")
+JWT_ALGORITHM = "HS256"
+
 # Create the main app
 app = FastAPI()
 
@@ -45,6 +53,33 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ======================= PASSWORD & JWT HELPERS =======================
+
+def hash_password(password: str) -> str:
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+
+def create_access_token(user_id: str, email: str) -> str:
+    payload = {
+        "sub": user_id, 
+        "email": email, 
+        "exp": datetime.now(timezone.utc) + timedelta(hours=24),
+        "type": "access"
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def create_refresh_token(user_id: str) -> str:
+    payload = {
+        "sub": user_id, 
+        "exp": datetime.now(timezone.utc) + timedelta(days=7), 
+        "type": "refresh"
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
 # ======================= MODELS =======================
 
 class User(BaseModel):
@@ -52,16 +87,17 @@ class User(BaseModel):
     user_id: str
     email: str
     name: str
-    picture: Optional[str] = None
+    role: str = "admin"
     created_at: datetime
 
-class UserSession(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    session_id: str
-    user_id: str
-    session_token: str
-    expires_at: datetime
-    created_at: datetime
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
 
 class Event(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -80,8 +116,8 @@ class Event(BaseModel):
 class EventCreate(BaseModel):
     name: str
     date: str
-    description: str
-    photographer_name: str
+    description: str = ""
+    photographer_name: str = ""
     cover_image: Optional[str] = None
     cover_public_id: Optional[str] = None
     published: bool = True
@@ -115,118 +151,137 @@ class PhotoCreate(BaseModel):
 # ======================= AUTH HELPERS =======================
 
 async def get_current_user(request: Request) -> User:
-    """Get the current authenticated user from session token."""
-    session_token = request.cookies.get("session_token")
+    """Get the current authenticated user from JWT token."""
+    token = request.cookies.get("access_token")
     
-    if not session_token:
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            session_token = auth_header.split(" ")[1]
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
     
-    if not session_token:
+    if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
-    session_doc = await db.user_sessions.find_one(
-        {"session_token": session_token},
-        {"_id": 0}
-    )
-    
-    if not session_doc:
-        raise HTTPException(status_code=401, detail="Invalid session")
-    
-    # Check expiry
-    expires_at = session_doc["expires_at"]
-    if isinstance(expires_at, str):
-        expires_at = datetime.fromisoformat(expires_at)
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=401, detail="Session expired")
-    
-    user_doc = await db.users.find_one(
-        {"user_id": session_doc["user_id"]},
-        {"_id": 0}
-    )
-    
-    if not user_doc:
-        raise HTTPException(status_code=401, detail="User not found")
-    
-    return User(**user_doc)
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        
+        user_id = payload.get("sub")
+        user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        
+        if not user_doc:
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        # Remove password_hash from response
+        user_doc.pop("password_hash", None)
+        
+        # Convert datetime if needed
+        if isinstance(user_doc.get('created_at'), str):
+            user_doc['created_at'] = datetime.fromisoformat(user_doc['created_at'])
+        
+        return User(**user_doc)
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 # ======================= AUTH ROUTES =======================
 
-@api_router.post("/auth/session")
-async def create_session(request: Request, response: Response):
-    """Exchange session_id from Emergent Auth for a session token."""
-    body = await request.json()
-    session_id = body.get("session_id")
+@api_router.post("/auth/login")
+async def login(request: LoginRequest, response: Response):
+    """Login with email and password."""
+    email = request.email.lower()
     
-    if not session_id:
-        raise HTTPException(status_code=400, detail="session_id is required")
+    user_doc = await db.users.find_one({"email": email}, {"_id": 0})
     
-    # Call Emergent Auth to get session data
-    async with httpx.AsyncClient() as client:
-        try:
-            auth_response = await client.get(
-                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-                headers={"X-Session-ID": session_id}
-            )
-            if auth_response.status_code != 200:
-                raise HTTPException(status_code=401, detail="Invalid session_id")
-            
-            auth_data = auth_response.json()
-        except Exception as e:
-            logger.error(f"Auth error: {e}")
-            raise HTTPException(status_code=401, detail="Authentication failed")
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
     
-    email = auth_data.get("email")
-    name = auth_data.get("name")
-    picture = auth_data.get("picture")
-    session_token = auth_data.get("session_token")
+    if not verify_password(request.password, user_doc.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
     
-    # Check if user exists or create new
-    existing_user = await db.users.find_one({"email": email}, {"_id": 0})
+    # Create tokens
+    access_token = create_access_token(user_doc["user_id"], email)
+    refresh_token = create_refresh_token(user_doc["user_id"])
     
-    if existing_user:
-        user_id = existing_user["user_id"]
-        # Update user info
-        await db.users.update_one(
-            {"email": email},
-            {"$set": {"name": name, "picture": picture}}
-        )
-    else:
-        user_id = f"user_{uuid.uuid4().hex[:12]}"
-        new_user = {
-            "user_id": user_id,
-            "email": email,
-            "name": name,
-            "picture": picture,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        await db.users.insert_one(new_user)
-    
-    # Create session
-    session_doc = {
-        "session_id": str(uuid.uuid4()),
-        "user_id": user_id,
-        "session_token": session_token,
-        "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    await db.user_sessions.insert_one(session_doc)
-    
-    # Set cookie
+    # Set cookies
     response.set_cookie(
-        key="session_token",
-        value=session_token,
+        key="access_token",
+        value=access_token,
         httponly=True,
         secure=True,
         samesite="none",
-        path="/",
-        max_age=7 * 24 * 60 * 60
+        max_age=24 * 60 * 60,
+        path="/"
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        max_age=7 * 24 * 60 * 60,
+        path="/"
     )
     
-    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    # Return user without password
+    user_doc.pop("password_hash", None)
+    return user_doc
+
+@api_router.post("/auth/register")
+async def register(request: RegisterRequest, response: Response):
+    """Register a new admin user."""
+    email = request.email.lower()
+    
+    # Check if user exists
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    # Create user
+    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    password_hash = hash_password(request.password)
+    now = datetime.now(timezone.utc)
+    
+    user_doc = {
+        "user_id": user_id,
+        "email": email,
+        "name": request.name,
+        "password_hash": password_hash,
+        "role": "admin",
+        "created_at": now.isoformat()
+    }
+    
+    await db.users.insert_one(user_doc)
+    
+    # Create tokens
+    access_token = create_access_token(user_id, email)
+    refresh_token = create_refresh_token(user_id)
+    
+    # Set cookies
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        max_age=24 * 60 * 60,
+        path="/"
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="none",
+        max_age=7 * 24 * 60 * 60,
+        path="/"
+    )
+    
+    # Return user without password
+    user_doc.pop("password_hash", None)
+    user_doc.pop("_id", None)
     return user_doc
 
 @api_router.get("/auth/me")
@@ -235,21 +290,49 @@ async def get_me(current_user: User = Depends(get_current_user)):
     return current_user.model_dump()
 
 @api_router.post("/auth/logout")
-async def logout(request: Request, response: Response):
+async def logout(response: Response):
     """Logout and clear session."""
-    session_token = request.cookies.get("session_token")
-    
-    if session_token:
-        await db.user_sessions.delete_one({"session_token": session_token})
-    
-    response.delete_cookie(
-        key="session_token",
-        path="/",
-        secure=True,
-        samesite="none"
-    )
-    
+    response.delete_cookie(key="access_token", path="/", secure=True, samesite="none")
+    response.delete_cookie(key="refresh_token", path="/", secure=True, samesite="none")
     return {"message": "Logged out successfully"}
+
+@api_router.post("/auth/refresh")
+async def refresh_token(request: Request, response: Response):
+    """Refresh access token."""
+    refresh_token = request.cookies.get("refresh_token")
+    
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="No refresh token")
+    
+    try:
+        payload = jwt.decode(refresh_token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        
+        user_id = payload.get("sub")
+        user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        
+        if not user_doc:
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        # Create new access token
+        access_token = create_access_token(user_id, user_doc["email"])
+        
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=True,
+            samesite="none",
+            max_age=24 * 60 * 60,
+            path="/"
+        )
+        
+        return {"message": "Token refreshed"}
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Refresh token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
 
 # ======================= CLOUDINARY ROUTES =======================
 
@@ -285,6 +368,27 @@ async def generate_signature(
         "resource_type": resource_type
     }
 
+# ======================= DASHBOARD STATS =======================
+
+@api_router.get("/dashboard/stats")
+async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
+    """Get dashboard statistics."""
+    events_count = await db.events.count_documents({"created_by": current_user.user_id})
+    
+    # Get photo counts per event for current user's events
+    user_events = await db.events.find(
+        {"created_by": current_user.user_id},
+        {"_id": 0, "event_id": 1}
+    ).to_list(1000)
+    
+    event_ids = [e["event_id"] for e in user_events]
+    user_photos_count = await db.photos.count_documents({"event_id": {"$in": event_ids}})
+    
+    return {
+        "total_events": events_count,
+        "total_photos": user_photos_count
+    }
+
 # ======================= EVENT ROUTES (ADMIN) =======================
 
 @api_router.get("/events", response_model=List[Event])
@@ -295,7 +399,10 @@ async def get_events(current_user: User = Depends(get_current_user)):
         {"_id": 0}
     ).sort("created_at", -1).to_list(1000)
     
+    # Get photo counts for each event
     for event in events:
+        count = await db.photos.count_documents({"event_id": event["event_id"]})
+        event["photo_count"] = count
         if isinstance(event.get('created_at'), str):
             event['created_at'] = datetime.fromisoformat(event['created_at'])
         if isinstance(event.get('updated_at'), str):
@@ -340,6 +447,10 @@ async def get_event(event_id: str, current_user: User = Depends(get_current_user
     
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Get photo count
+    count = await db.photos.count_documents({"event_id": event_id})
+    event["photo_count"] = count
     
     if isinstance(event.get('created_at'), str):
         event['created_at'] = datetime.fromisoformat(event['created_at'])
@@ -543,9 +654,6 @@ async def get_public_event_photos(event_id: str):
 
 # ======================= PHOTO PROXY ROUTE (PUBLIC) =======================
 
-from fastapi.responses import StreamingResponse
-import io
-
 @api_router.get("/photos/{photo_id}/view")
 async def view_photo(photo_id: str):
     """
@@ -567,9 +675,9 @@ async def view_photo(photo_id: str):
         raise HTTPException(status_code=404, detail="Photo not found")
     
     # Fetch the image from Cloudinary
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient() as http_client:
         try:
-            response = await client.get(photo["cloudinary_url"], timeout=30.0)
+            response = await http_client.get(photo["cloudinary_url"], timeout=30.0)
             if response.status_code != 200:
                 raise HTTPException(status_code=404, detail="Image not found")
             
@@ -598,6 +706,7 @@ async def root():
 # Include the router in the main app
 app.include_router(api_router)
 
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -605,6 +714,44 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ======================= STARTUP EVENTS =======================
+
+@app.on_event("startup")
+async def startup_event():
+    """Seed admin user on startup."""
+    admin_email = os.environ.get("ADMIN_EMAIL", "admin@luxstudio.com")
+    admin_password = os.environ.get("ADMIN_PASSWORD", "Admin123!")
+    
+    existing = await db.users.find_one({"email": admin_email})
+    
+    if existing is None:
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        hashed = hash_password(admin_password)
+        now = datetime.now(timezone.utc)
+        
+        await db.users.insert_one({
+            "user_id": user_id,
+            "email": admin_email,
+            "name": "Admin",
+            "password_hash": hashed,
+            "role": "admin",
+            "created_at": now.isoformat()
+        })
+        logger.info(f"Admin user created: {admin_email}")
+    elif not verify_password(admin_password, existing.get("password_hash", "")):
+        # Update password if changed in env
+        await db.users.update_one(
+            {"email": admin_email},
+            {"$set": {"password_hash": hash_password(admin_password)}}
+        )
+        logger.info(f"Admin password updated for: {admin_email}")
+    
+    # Create indexes
+    await db.users.create_index("email", unique=True)
+    await db.events.create_index("event_id", unique=True)
+    await db.photos.create_index("photo_id", unique=True)
+    await db.photos.create_index("event_id")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

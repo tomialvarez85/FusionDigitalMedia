@@ -7,12 +7,22 @@ import { Toaster } from "@/components/ui/sonner";
 import PublicGallery from "@/pages/PublicGallery";
 import PublicEvent from "@/pages/PublicEvent";
 import AdminLogin from "@/pages/AdminLogin";
-import AuthCallback from "@/pages/AuthCallback";
 import Dashboard from "@/pages/Dashboard";
 import EventDetail from "@/pages/EventDetail";
+import CreateEvent from "@/pages/CreateEvent";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export const API = `${BACKEND_URL}/api`;
+
+// Helper to format API error details
+export const formatApiErrorDetail = (detail) => {
+  if (detail == null) return "Something went wrong. Please try again.";
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail))
+    return detail.map((e) => (e && typeof e.msg === "string" ? e.msg : JSON.stringify(e))).filter(Boolean).join(" ");
+  if (detail && typeof detail.msg === "string") return detail.msg;
+  return String(detail);
+};
 
 // Auth Context
 export const AuthContext = createContext(null);
@@ -30,14 +40,6 @@ const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   const checkAuth = useCallback(async () => {
-    // CRITICAL: If returning from OAuth callback, skip the /me check.
-    // AuthCallback will exchange the session_id and establish the session first.
-    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-    if (window.location.hash?.includes('session_id=')) {
-      setLoading(false);
-      return;
-    }
-
     try {
       const response = await fetch(`${API}/auth/me`, {
         credentials: 'include'
@@ -107,46 +109,43 @@ const ProtectedRoute = ({ children }) => {
   return user ? children : null;
 };
 
-// App Router with session_id detection
-function AppRouter() {
-  const location = useLocation();
-
-  // Check URL fragment for session_id synchronously during render
-  if (location.hash?.includes('session_id=')) {
-    return <AuthCallback />;
-  }
-
-  return (
-    <Routes>
-      <Route path="/" element={<PublicGallery />} />
-      <Route path="/event/:eventId" element={<PublicEvent />} />
-      <Route path="/admin" element={<AdminLogin />} />
-      <Route 
-        path="/dashboard" 
-        element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/dashboard/event/:eventId" 
-        element={
-          <ProtectedRoute>
-            <EventDetail />
-          </ProtectedRoute>
-        } 
-      />
-    </Routes>
-  );
-}
-
 function App() {
   return (
     <div className="App min-h-screen bg-[#0A0A0A]">
       <BrowserRouter>
         <AuthProvider>
-          <AppRouter />
+          <Routes>
+            {/* Public Routes */}
+            <Route path="/" element={<PublicGallery />} />
+            <Route path="/event/:eventId" element={<PublicEvent />} />
+            
+            {/* Admin Routes */}
+            <Route path="/admin" element={<AdminLogin />} />
+            <Route 
+              path="/admin/dashboard" 
+              element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/admin/events/new" 
+              element={
+                <ProtectedRoute>
+                  <CreateEvent />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/admin/events/:eventId" 
+              element={
+                <ProtectedRoute>
+                  <EventDetail />
+                </ProtectedRoute>
+              } 
+            />
+          </Routes>
           <Toaster position="bottom-right" theme="dark" />
         </AuthProvider>
       </BrowserRouter>
