@@ -26,6 +26,52 @@ Build a full-stack web application for a photography studio team called "Lux Stu
 - [x] Backend proxy for images
 - [x] Right-click/drag disabled
 
+## Database Schema (MongoDB)
+
+### admins collection
+| Field | Type | Description |
+|-------|------|-------------|
+| admin_id | string | Unique identifier (primary key) |
+| email | string | Admin email (unique) |
+| password_hash | string | Bcrypt hashed password |
+| name | string | Display name |
+| created_at | string | ISO timestamp |
+
+### events collection
+| Field | Type | Description |
+|-------|------|-------------|
+| event_id | string | Unique identifier (primary key) |
+| name | string | Event name |
+| date | string | Event date (YYYY-MM-DD) |
+| description | string | Event description |
+| photographer_name | string | Photographer name |
+| is_published | boolean | Public visibility |
+| cover_photo_id | string | Reference to photos.photo_id |
+| created_by | string | Reference to admins.admin_id |
+| created_at | string | ISO timestamp |
+| updated_at | string | ISO timestamp |
+
+### photos collection
+| Field | Type | Description |
+|-------|------|-------------|
+| photo_id | string | Unique identifier (primary key) |
+| event_id | string | Reference to events.event_id (FK) |
+| storage_key | string | Cloudinary public_id only |
+| original_filename | string | Original upload filename |
+| width | int | Image width in pixels |
+| height | int | Image height in pixels |
+| file_size | int | File size in bytes |
+| uploaded_at | string | ISO timestamp |
+
+## File Storage (Cloudinary)
+- Folder structure: `lux-studio/events/{event_id}/`
+- Only `public_id` stored in database (storage_key field)
+- URLs reconstructed server-side in proxy endpoint
+- No raw URLs ever exposed to browser
+
+## Migration
+Run `python /app/backend/migrations.py` to initialize/update schema.
+
 ## What's Been Implemented (January 2026)
 
 ### Backend
