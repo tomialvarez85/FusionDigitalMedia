@@ -1,0 +1,64 @@
+{
+  "theme": "dark",
+  "archetype": "5 (Jewel & Luxury)",
+  "colors": {
+    "background": "#0A0A0A",
+    "surface": "#141414",
+    "surface_glass": "bg-black/60 backdrop-blur-xl",
+    "primary": "#FAFAFA",
+    "secondary": "#A3A3A3",
+    "accent": "#C8A97E",
+    "border": "#262626",
+    "error": "#7F1D1D"
+  },
+  "typography": {
+    "heading_font": "Cormorant Garamond",
+    "body_font": "Outfit",
+    "heading_classes": "font-serif tracking-tight text-[#FAFAFA]",
+    "body_classes": "font-sans text-[#A3A3A3] tracking-normal",
+    "h1_size": "text-4xl md:text-5xl lg:text-6xl",
+    "h2_size": "text-2xl md:text-3xl lg:text-4xl",
+    "h3_size": "text-xl md:text-2xl",
+    "overline_classes": "uppercase text-xs tracking-[0.2em] text-[#C8A97E]"
+  },
+  "layout": {
+    "spacing_scale": "p-8 md:p-12 lg:p-16",
+    "dashboard_grid": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "gallery_grid": "grid-cols-1 md:grid-cols-8 lg:grid-cols-12 gap-8",
+    "borders_and_radius": "rounded-none border border-white/10"
+  },
+  "components": {
+    "buttons": "bg-white text-black hover:bg-gray-200 transition-colors duration-300 rounded-none px-6 py-3 font-medium",
+    "cards": "bg-[#141414] border border-white/10 rounded-none p-6 shadow-sm",
+    "inputs": "bg-transparent border border-white/20 text-white placeholder:text-gray-500 rounded-none focus:border-white focus:ring-1 focus:ring-white",
+    "navigation": "fixed top-0 w-full z-50 bg-black/60 backdrop-blur-xl border-b border-white/10",
+    "glassmorphism": "backdrop-blur-xl bg-black/60 border-b border-white/10"
+  },
+  "effects": {
+    "hover": "transition-all duration-300 ease-in-out opacity-80 hover:opacity-100",
+    "watermark_canvas": "Overlay diagonal text 'Lux Studio' with opacity 0.3 on HTML canvas. Add progressive blur on bottom 50% using mask-image gradient.",
+    "protection": "Disable context menu (onContextMenu={(e) => e.preventDefault()}) and pointer-events-none on image elements."
+  },
+  "images": {
+    "hero_background": "https://images.unsplash.com/photo-1715558643415-04dc77392936?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHw0fHxkYXJrJTIwcGhvdG9ncmFwaHklMjBzdHVkaW98ZW58MHx8fHwxNzc1NjgwNTcxfDA&ixlib=rb-4.1.0&q=85",
+    "fashion_event_cover": "https://images.unsplash.com/photo-1649094995015-047fcf337506?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHw0fHxoaWdoJTIwZmFzaGlvbiUyMHBvcnRyYWl0fGVufDB8fHx8MTc3NTY4MDU3MXww&ixlib=rb-4.1.0&q=85",
+    "wedding_event_cover": "https://images.unsplash.com/photo-1504227986464-b07ae4f486f4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njd8MHwxfHNlYXJjaHwxfHxibGFjayUyMGFuZCUyMHdoaXRlJTIwd2VkZGluZ3xlbnwwfHx8fDE3NzU2ODA1NzF8MA&ixlib=rb-4.1.0&q=85",
+    "event_cover_3": "https://images.unsplash.com/photo-1744371079305-877ef10d62ed?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzV8MHwxfHNlYXJjaHwxfHxoaWdoJTIwZmFzaGlvbiUyMHBvcnRyYWl0fGVufDB8fHx8MTc3NTY4MDU3MXww&ixlib=rb-4.1.0&q=85",
+    "logo_placeholder": "https://images.unsplash.com/photo-1760537826554-b8701b24ba30?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNTl8MHwxfHNlYXJjaHwyfHxtaW5pbWFsaXN0JTIwbHV4dXJ5JTIwbG9nb3xlbnwwfHx8fDE3NzU2ODA1NzF8MA&ixlib=rb-4.1.0&q=85"
+  },
+  "instructions_to_main_agent": [
+    "Use Tailwind for styling. Initialize the app as a Vite React project with Tailwind CSS.",
+    "Do NOT use HTML input[type=date] or select. Use Shadcn UI components for Admin areas.",
+    "For the public photo viewer, images MUST be drawn onto an HTML5 <canvas>. The canvas should apply the watermark text ('Lux Studio') diagonally with low opacity, and a CSS mask-image linear-gradient or Canvas filter to progressively blur the bottom 50%.",
+    "Disable right-click via onContextMenu={e => e.preventDefault()} and disable drag via onDragStart={e => e.preventDefault()}.",
+    "For icons, install and use @phosphor-icons/react or lucide-react.",
+    "Follow the strict font combination: Cormorant Garamond for headings, Outfit for body text.",
+    "Use dark theme by default, apply bg-[#0A0A0A] and text-white globally.",
+    "Admin authentication should use Emergent-managed Google OAuth as requested.",
+    "Cloudinary must be used for image storage as per user choices.",
+    "Ensure the layout is highly spaced with p-8 to p-16 padding blocks to achieve a luxury feel.",
+    "Make sure all interactive and key informational elements include a 'data-testid' attribute.",
+    "Use solid rectangular cards (rounded-none) with 1px border for event display to mimic physical photograph frames.",
+    "Use 'bento' asymmetrical grid layouts for the public photography gallery."
+  ]
+}
