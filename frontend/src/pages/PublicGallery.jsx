@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { Camera, Calendar, User, ArrowRight } from "lucide-react";
+import { Camera, Calendar, User, ArrowRight, Image } from "lucide-react";
 import { API } from "@/App";
+import ProtectedThumbnail from "@/components/ProtectedThumbnail";
 
 const PublicGallery = () => {
   const [events, setEvents] = useState([]);
@@ -85,57 +86,12 @@ const PublicGallery = () => {
             <p className="text-[#A3A3A3]">No events available yet.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8" data-testid="events-grid">
+          <div 
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8" 
+            data-testid="events-grid"
+          >
             {events.map((event, index) => (
-              <Link 
-                key={event.event_id} 
-                to={`/event/${event.event_id}`}
-                className="event-card lux-card group animate-slide-up"
-                style={{ animationDelay: `${index * 0.1}s` }}
-                data-testid={`event-card-${event.event_id}`}
-              >
-                <div className="aspect-[4/3] overflow-hidden mb-4 relative bg-[#1a1a1a]">
-                  {event.cover_image ? (
-                    <img 
-                      src={event.cover_image} 
-                      alt={event.name}
-                      className="event-image w-full h-full object-cover transition-transform duration-500"
-                      onContextMenu={(e) => e.preventDefault()}
-                      onDragStart={(e) => e.preventDefault()}
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Camera className="w-12 h-12 text-[#A3A3A3]" />
-                    </div>
-                  )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                </div>
-                
-                <p className="lux-overline mb-2">{event.photo_count} Photos</p>
-                <h3 className="font-serif text-xl text-white mb-3 group-hover:text-[#C8A97E] transition-colors">
-                  {event.name}
-                </h3>
-                
-                <div className="flex items-center gap-4 text-[#A3A3A3] text-sm mb-4">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-4 h-4" />
-                    {event.date}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <User className="w-4 h-4" />
-                    {event.photographer_name}
-                  </span>
-                </div>
-                
-                <p className="text-[#A3A3A3] text-sm line-clamp-2 mb-4">
-                  {event.description}
-                </p>
-                
-                <div className="flex items-center gap-2 text-white text-sm group-hover:text-[#C8A97E] transition-colors">
-                  View Gallery
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </Link>
+              <EventCard key={event.event_id} event={event} index={index} />
             ))}
           </div>
         )}
@@ -152,6 +108,93 @@ const PublicGallery = () => {
         </div>
       </footer>
     </div>
+  );
+};
+
+// Event Card Component with Protected Thumbnail
+const EventCard = ({ event, index }) => {
+  const [firstPhotoId, setFirstPhotoId] = useState(null);
+  const [loadingPhoto, setLoadingPhoto] = useState(true);
+
+  useEffect(() => {
+    fetchFirstPhoto();
+  }, [event.event_id]);
+
+  const fetchFirstPhoto = async () => {
+    try {
+      const response = await fetch(`${API}/public/events/${event.event_id}/photos`);
+      if (response.ok) {
+        const photos = await response.json();
+        if (photos.length > 0) {
+          setFirstPhotoId(photos[0].photo_id);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch first photo:", error);
+    } finally {
+      setLoadingPhoto(false);
+    }
+  };
+
+  return (
+    <Link 
+      to={`/event/${event.event_id}`}
+      className="event-card lux-card group animate-slide-up"
+      style={{ animationDelay: `${index * 0.1}s` }}
+      data-testid={`event-card-${event.event_id}`}
+    >
+      <div className="aspect-[4/3] overflow-hidden mb-4 relative bg-[#1a1a1a]">
+        {loadingPhoto ? (
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="spinner" />
+          </div>
+        ) : firstPhotoId ? (
+          <ProtectedThumbnail
+            photoId={firstPhotoId}
+            className="w-full h-full"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Image className="w-12 h-12 text-[#A3A3A3]" />
+          </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        
+        {/* Photo count badge */}
+        <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-sm px-2 py-1 text-xs text-white flex items-center gap-1">
+          <Image className="w-3 h-3" />
+          {event.photo_count}
+        </div>
+      </div>
+      
+      <h3 className="font-serif text-xl text-white mb-3 group-hover:text-[#C8A97E] transition-colors">
+        {event.name}
+      </h3>
+      
+      <div className="flex items-center gap-4 text-[#A3A3A3] text-sm mb-4">
+        <span className="flex items-center gap-1">
+          <Calendar className="w-4 h-4" />
+          {event.date}
+        </span>
+        {event.photographer_name && (
+          <span className="flex items-center gap-1">
+            <User className="w-4 h-4" />
+            {event.photographer_name}
+          </span>
+        )}
+      </div>
+      
+      {event.description && (
+        <p className="text-[#A3A3A3] text-sm line-clamp-2 mb-4">
+          {event.description}
+        </p>
+      )}
+      
+      <div className="flex items-center gap-2 text-white text-sm group-hover:text-[#C8A97E] transition-colors">
+        View Gallery
+        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+      </div>
+    </Link>
   );
 };
 

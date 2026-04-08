@@ -68,7 +68,6 @@
 
 .photo-grid > * {
     break-inside: avoid;
-    margin-bottom: 1.5rem;
 }
 
 /* Loading spinner */
