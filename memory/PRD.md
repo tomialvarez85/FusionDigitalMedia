@@ -37,7 +37,7 @@ Build a full-stack web application for a photography studio team called "Lux Stu
 - Photo proxy endpoint for secure image delivery
 - Dashboard stats endpoint
 
-### Frontend
+### Frontend - Admin Panel
 - Admin login page with email/password
 - Admin dashboard with stats (events, photos count)
 - Create event page with date picker
@@ -45,8 +45,18 @@ Build a full-stack web application for a photography studio team called "Lux Stu
 - Photo upload with drag-and-drop
 - Per-file upload progress tracking
 - Delete confirmations for events/photos
-- Public gallery with event cards
+
+### Frontend - Public Gallery
+- Home page with responsive grid (3/2/1 columns)
+- Event cards with protected thumbnails (canvas-rendered)
+- Photo count badges on event cards
+- Event detail page with masonry photo grid
 - Protected photo viewer (canvas + watermark + blur)
+- Lightbox with prev/next navigation
+- Stronger watermark in lightbox (40% opacity)
+- "Contact us to purchase" message
+- Floating WhatsApp contact button
+- Right-click/drag/keyboard shortcuts disabled
 
 ## API Endpoints
 - POST /api/auth/login - Login
