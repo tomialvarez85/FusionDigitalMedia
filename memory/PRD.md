@@ -26,6 +26,39 @@ Build a full-stack web application for a photography studio team called "Lux Stu
 - [x] Backend proxy for images
 - [x] Right-click/drag disabled
 
+## Deployment Configuration
+
+### Environment Variables Required
+Copy from `/app/backend/.env.example`:
+| Variable | Description |
+|----------|-------------|
+| MONGO_URL | MongoDB connection string |
+| DB_NAME | Database name |
+| JWT_SECRET | Secret key for JWT tokens (min 32 chars) |
+| ADMIN_EMAIL | Default admin email |
+| ADMIN_PASSWORD | Default admin password (min 8 chars) |
+| CLOUDINARY_CLOUD_NAME | Cloudinary cloud name |
+| CLOUDINARY_API_KEY | Cloudinary API key |
+| CLOUDINARY_API_SECRET | Cloudinary API secret |
+| CORS_ORIGINS | Allowed origins (comma-separated or *) |
+| RATE_LIMIT_PHOTO_PROXY | Rate limit per minute per IP (default: 60) |
+
+### Security Features
+- JWT authentication with httpOnly cookies
+- Rate limiting on photo proxy (60 req/min/IP)
+- CORS configured for production domains
+- Admin user auto-seeded on startup
+- No raw image URLs exposed to browser
+
+### Production Build
+- React build served by FastAPI in production
+- Single deployable unit
+- MongoDB aggregation pipelines for optimized queries
+
+### Scripts
+- `python seed.py` - Create admin user from env vars
+- `python migrations.py` - Initialize/update database schema
+
 ## Database Schema (MongoDB)
 
 ### admins collection
