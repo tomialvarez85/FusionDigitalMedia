@@ -71,7 +71,7 @@ const AdminLogin = () => {
         <div className="text-center mb-12 animate-fade-in">
           <div className="flex items-center justify-center gap-3 mb-4">
             <Camera className="w-10 h-10 text-[#C8A97E]" />
-            <span className="font-serif text-3xl tracking-tight text-white">Lux Studio</span>
+            <span className="font-serif text-3xl tracking-tight text-white">Fusion Digital Media</span>
           </div>
           <p className="lux-overline">Admin Portal</p>
         </div>

@@ -75,7 +75,7 @@ const CreateEvent = () => {
             </Link>
             <div className="flex items-center gap-3">
               <Camera className="w-6 h-6 text-[#C8A97E]" />
-              <span className="font-serif text-2xl tracking-tight text-white">Lux Studio</span>
+              <span className="font-serif text-2xl tracking-tight text-white">Fusion Digital Media</span>
             </div>
           </div>
         </div>

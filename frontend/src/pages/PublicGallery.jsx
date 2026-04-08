@@ -33,7 +33,7 @@ const PublicGallery = () => {
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3" data-testid="logo-link">
             <Camera className="w-6 h-6 text-[#C8A97E]" />
-            <span className="font-serif text-2xl tracking-tight text-white">Lux Studio</span>
+            <span className="font-serif text-2xl tracking-tight text-white">Fusion Digital Media</span>
           </Link>
           <Link 
             to="/admin" 
@@ -102,9 +102,9 @@ const PublicGallery = () => {
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <Camera className="w-5 h-5 text-[#C8A97E]" />
-            <span className="font-serif text-lg text-white">Lux Studio</span>
+            <span className="font-serif text-lg text-white">Fusion Digital Media</span>
           </div>
-          <p className="text-[#A3A3A3] text-sm">© 2025 Lux Studio. All rights reserved.</p>
+          <p className="text-[#A3A3A3] text-sm">© 2025 Fusion Digital Media. Todos los derechos reservados.</p>
         </div>
       </footer>
     </div>

@@ -144,15 +144,15 @@ const LightboxPhoto = ({
     ctx.textBaseline = 'middle';
     
     // Draw main watermark
-    ctx.fillText('LUX STUDIO', 0, 0);
+    ctx.fillText('FUSION DIGITAL MEDIA', 0, 0);
     
     // Draw additional watermarks for better coverage
     const spacing = fontSize * 2.5;
     ctx.fillStyle = 'rgba(200, 169, 126, 0.25)'; // Slightly lighter for secondary
-    ctx.fillText('LUX STUDIO', -spacing * 1.2, -spacing);
-    ctx.fillText('LUX STUDIO', spacing * 1.2, spacing);
-    ctx.fillText('LUX STUDIO', -spacing * 1.2, spacing);
-    ctx.fillText('LUX STUDIO', spacing * 1.2, -spacing);
+    ctx.fillText('FUSION DIGITAL MEDIA', -spacing * 1.2, -spacing);
+    ctx.fillText('FUSION DIGITAL MEDIA', spacing * 1.2, spacing);
+    ctx.fillText('FUSION DIGITAL MEDIA', -spacing * 1.2, spacing);
+    ctx.fillText('FUSION DIGITAL MEDIA', spacing * 1.2, -spacing);
     
     ctx.restore();
   };
@@ -171,7 +171,7 @@ const LightboxPhoto = ({
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
     
-    ctx.fillText('© luxstudio.com', 12, height - 12);
+    ctx.fillText('© fusiondigitalmedia.com', 12, height - 12);
     
     ctx.restore();
   };

@@ -68,7 +68,7 @@ const ProtectedThumbnail = ({
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     
-    ctx.fillText('LUX STUDIO', 0, 0);
+    ctx.fillText('FUSION DIGITAL MEDIA', 0, 0);
     
     ctx.restore();
   };

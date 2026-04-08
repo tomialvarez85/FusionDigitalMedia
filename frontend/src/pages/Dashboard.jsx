@@ -92,7 +92,7 @@ const Dashboard = () => {
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link to="/admin/dashboard" className="flex items-center gap-3">
             <Camera className="w-6 h-6 text-[#C8A97E]" />
-            <span className="font-serif text-2xl tracking-tight text-white">Lux Studio</span>
+            <span className="font-serif text-2xl tracking-tight text-white">Fusion Digital Media</span>
             <span className="text-[#A3A3A3] text-sm ml-2">Admin</span>
           </Link>
           

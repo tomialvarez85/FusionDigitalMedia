@@ -185,14 +185,14 @@ const ProtectedPhoto = ({
     ctx.textBaseline = 'middle';
     
     // Draw main watermark
-    ctx.fillText('LUX STUDIO', 0, 0);
+    ctx.fillText('FUSION DIGITAL MEDIA', 0, 0);
     
     // Draw additional watermarks for coverage
     const spacing = fontSize * 3;
-    ctx.fillText('LUX STUDIO', -spacing * 1.5, -spacing);
-    ctx.fillText('LUX STUDIO', spacing * 1.5, spacing);
-    ctx.fillText('LUX STUDIO', -spacing * 1.5, spacing);
-    ctx.fillText('LUX STUDIO', spacing * 1.5, -spacing);
+    ctx.fillText('FUSION DIGITAL MEDIA', -spacing * 1.5, -spacing);
+    ctx.fillText('FUSION DIGITAL MEDIA', spacing * 1.5, spacing);
+    ctx.fillText('FUSION DIGITAL MEDIA', -spacing * 1.5, spacing);
+    ctx.fillText('FUSION DIGITAL MEDIA', spacing * 1.5, -spacing);
     
     ctx.restore();
   };
@@ -213,7 +213,7 @@ const ProtectedPhoto = ({
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 1;
     
-    ctx.fillText('© luxstudio.com', 10, height - 10);
+    ctx.fillText('© fusiondigitalmedia.com', 10, height - 10);
     
     ctx.restore();
   };
