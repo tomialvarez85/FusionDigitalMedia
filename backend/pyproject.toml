@@ -1,0 +1,8 @@
+[tool.poetry]
+name = "fusion-digital-media-backend"
+version = "1.0.0"
+description = "Fusion Digital Media Photography Studio Backend"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
