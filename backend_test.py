@@ -203,11 +203,31 @@ class LuxStudioAPITester:
         )
         
         # Test cloudinary signature generation (requires event_id parameter)
+        signature_data = None
         if self.test_event_id:
-            self.test_api_endpoint(
+            success, signature_data = self.test_api_endpoint(
                 'GET', f'cloudinary/signature?event_id={self.test_event_id}', 200,
                 description="Get Cloudinary upload signature with event_id"
             )
+            
+            # Validate signature response structure
+            if success and signature_data:
+                required_fields = ['signature', 'timestamp', 'cloud_name', 'api_key', 'folder']
+                missing_fields = [field for field in required_fields if field not in signature_data]
+                if missing_fields:
+                    self.log_test("Cloudinary signature structure", False, f"Missing fields: {missing_fields}")
+                else:
+                    self.log_test("Cloudinary signature structure", True, "All required fields present")
+                    print(f"   🔑 Cloud name: {signature_data.get('cloud_name')}")
+                    print(f"   📁 Folder path: {signature_data.get('folder')}")
+                    
+                    # Verify folder path format
+                    expected_folder = f"lux-studio/events/{self.test_event_id}"
+                    actual_folder = signature_data.get('folder')
+                    if actual_folder == expected_folder:
+                        self.log_test("Cloudinary folder path format", True, f"Correct folder: {actual_folder}")
+                    else:
+                        self.log_test("Cloudinary folder path format", False, f"Expected: {expected_folder}, Got: {actual_folder}")
         
         # Test creating a photo
         photo_data = {
@@ -227,6 +247,15 @@ class LuxStudioAPITester:
         if success and created_photo:
             self.test_photo_id = created_photo.get('photo_id')
             print(f"   📸 Created photo ID: {self.test_photo_id}")
+            
+            # Test photo proxy endpoint
+            if self.test_photo_id:
+                # Note: This will likely fail since we're using a fake storage_key
+                # but we want to test the endpoint structure
+                proxy_success, proxy_response = self.test_api_endpoint(
+                    'GET', f'photos/{self.test_photo_id}/view', 404,
+                    description="Test photo proxy endpoint (expected 404 for fake storage_key)"
+                )
 
     def test_public_endpoints(self):
         """Test public (non-authenticated) endpoints"""
