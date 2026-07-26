@@ -15,15 +15,24 @@ export default function CartDrawer({
   function handleCheckout() {
     if (!whatsappNumber) return;
 
-    const lines = items.map(
-      (item) => `- Evento: ${item.eventTitulo} - Foto #${item.photoId}`
-    );
+    // Cada foto: línea de título, el link en su propia línea (para que
+    // WhatsApp lo linkifique) y una línea en blanco antes de la próxima foto.
+    const lines = items.flatMap((item) => [
+      `- Evento: ${item.eventTitulo} - Foto #${item.photoId}`,
+      item.previewUrl,
+      "",
+    ]);
+
     const message = [
       "Hola! Quiero comprar las siguientes fotos:",
+      "",
       ...lines,
       `Total: ${items.length} foto${items.length === 1 ? "" : "s"}`,
     ].join("\n");
 
+    // Un solo encodeURIComponent sobre el mensaje completo: los links de
+    // preview_url quedan codificados como parte del texto (correcto para
+    // ?text=), sin doble-encodear ninguna URL por separado.
     const sanitizedNumber = whatsappNumber.replace(/\D/g, "");
     const url = `https://wa.me/${sanitizedNumber}?text=${encodeURIComponent(
       message
