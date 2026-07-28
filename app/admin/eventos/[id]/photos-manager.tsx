@@ -3,6 +3,8 @@
 import { useRef, useState, type ChangeEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/lib/toast-context";
+import PhotoThumbnail from "@/components/photo-thumbnail";
+import Spinner from "@/components/spinner";
 
 type Photo = {
   id: string;
@@ -89,7 +91,12 @@ export default function EventoPhotosManager({
     <section className="mt-8">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">Fotos del evento</h2>
-        <label className="cursor-pointer rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-zinc-950 transition-colors hover:bg-amber-300">
+        <label
+          className={`flex items-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-zinc-950 transition-colors hover:bg-amber-300 ${
+            uploading ? "cursor-wait opacity-80" : "cursor-pointer"
+          }`}
+        >
+          {uploading && <Spinner className="h-4 w-4" />}
           {uploading ? "Subiendo..." : "Subir fotos"}
           <input
             ref={fileInputRef}
@@ -114,12 +121,7 @@ export default function EventoPhotosManager({
               key={photo.id}
               className="group relative overflow-hidden rounded-lg border border-zinc-800"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={photo.preview_url}
-                alt=""
-                className="aspect-square w-full object-cover"
-              />
+              <PhotoThumbnail src={photo.preview_url} alt="" />
               <button
                 type="button"
                 onClick={() => handleDelete(photo)}

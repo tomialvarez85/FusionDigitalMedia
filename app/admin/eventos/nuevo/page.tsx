@@ -4,8 +4,8 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { getCurrentPhotographer } from "@/lib/photographer";
 import { useToast } from "@/lib/toast-context";
+import Spinner from "@/components/spinner";
 
 export default function NuevoEventoPage() {
   const router = useRouter();
@@ -16,6 +16,7 @@ export default function NuevoEventoPage() {
   const [descripcion, setDescripcion] = useState("");
   const [fecha, setFecha] = useState("");
   const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -23,11 +24,6 @@ export default function NuevoEventoPage() {
     setLoading(true);
 
     try {
-      const photographer = await getCurrentPhotographer(supabase);
-      if (!photographer) {
-        throw new Error("No se encontró tu perfil de fotógrafo.");
-      }
-
       let coverImageUrl: string | null = null;
 
       if (coverFile) {
@@ -42,21 +38,25 @@ export default function NuevoEventoPage() {
           .data.publicUrl;
       }
 
-      const { data: inserted, error: insertError } = await supabase
-        .from("events")
-        .insert({
+      const response = await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           titulo,
-          descripcion: descripcion || null,
-          fecha: fecha || null,
-          cover_image_url: coverImageUrl,
-          created_by: photographer.id,
-        })
-        .select("id")
-        .single();
+          descripcion,
+          fecha,
+          coverImageUrl,
+          password,
+        }),
+      });
 
-      if (insertError) throw insertError;
+      const result = await response.json();
 
-      router.push(`/admin/eventos/${inserted.id}`);
+      if (!response.ok) {
+        throw new Error(result.error ?? "Ocurrió un error al crear el evento.");
+      }
+
+      router.push(`/admin/eventos/${result.event.id}`);
       router.refresh();
     } catch (err) {
       showToast(
@@ -129,12 +129,33 @@ export default function NuevoEventoPage() {
           />
         </div>
 
+        <div className="space-y-1">
+          <label htmlFor="password" className="block text-sm font-medium text-zinc-300">
+            Contraseña de acceso (opcional)
+          </label>
+          <input
+            id="password"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Dejar vacío para que el evento sea público"
+            className="w-full rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-amber-400 focus:outline-none"
+          />
+          <p className="text-xs text-zinc-500">
+            Si completás este campo, quienes quieran ver el evento van a
+            necesitar esta contraseña. Si lo dejás vacío, el evento queda
+            visible para cualquiera.
+          </p>
+        </div>
+
         <div className="flex flex-col gap-3 sm:flex-row">
           <button
             type="submit"
             disabled={loading}
-            className="rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-zinc-950 transition-colors hover:bg-amber-300 disabled:opacity-50"
+            className="flex items-center justify-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-zinc-950 transition-colors hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
+            {loading && <Spinner className="h-4 w-4" />}
             {loading ? "Guardando..." : "Guardar evento"}
           </button>
           <Link

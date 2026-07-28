@@ -23,7 +23,10 @@ create table if not exists public.events (
   fecha date,
   cover_image_url text,
   created_by uuid references public.photographers (id) on delete set null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Hash bcrypt de la contraseña de acceso (null = evento público, sin
+  -- restricción). Nunca se guarda la contraseña en texto plano.
+  password_hash text
 );
 
 create table if not exists public.photos (
@@ -92,31 +95,21 @@ create policy "events_insert_authenticated"
     )
   );
 
--- Un fotógrafo solo puede actualizar eventos cuyo created_by sea su propia
--- fila en `photographers` (no otros fotógrafos).
+-- Cualquier fotógrafo autenticado puede actualizar cualquier evento del
+-- sistema, no solo los que él mismo creó. created_by queda como referencia
+-- de quién lo cargó originalmente, no como restricción de permisos.
 create policy "events_update_authenticated"
   on public.events for update
   to authenticated
-  using (
-    created_by in (
-      select id from public.photographers where user_id = auth.uid()
-    )
-  )
-  with check (
-    created_by in (
-      select id from public.photographers where user_id = auth.uid()
-    )
-  );
+  using (true)
+  with check (true);
 
--- Idem para delete: solo sobre eventos propios.
+-- Idem para delete: cualquier fotógrafo autenticado puede borrar cualquier
+-- evento.
 create policy "events_delete_authenticated"
   on public.events for delete
   to authenticated
-  using (
-    created_by in (
-      select id from public.photographers where user_id = auth.uid()
-    )
-  );
+  using (true);
 
 -- photos: lectura pública, escritura solo para autenticados
 create policy "photos_select_public"

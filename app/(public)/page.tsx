@@ -33,8 +33,10 @@ export default function HomePage() {
             Capturamos los momentos que importan
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-base text-zinc-300 sm:text-lg">
-            Fotografía de eventos, retratos y producción audiovisual con una
-            mirada cuidada y profesional.
+            En Fusion DigitalMedia nos dedicamos a fotografiar bodas,
+            cumpleaños de 15, eventos corporativos, sesiones de familia y
+            eventos de automovilismo, con años de trayectoria y un cuidado
+            especial en cada detalle.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
@@ -82,23 +84,29 @@ export default function HomePage() {
               Quiénes somos
             </p>
             <h2 className="mt-4 text-3xl font-bold sm:text-4xl">
-              Un equipo de fotógrafos apasionados por contar historias
+              Un estudio dedicado a contar historias
             </h2>
             <div className="mt-6 space-y-4 text-zinc-400">
-              {/* Texto institucional editable */}
               <p>
-                Lorem ipsum dolor sit amet, consectetur adipiscing elit. Fusion
-                DigitalMedia nació de la pasión por capturar momentos únicos e
-                irrepetibles. Combinamos técnica, equipo profesional y una
-                mirada artística para acompañar cada evento de principio a
-                fin.
+                Fusion DigitalMedia es un estudio fotográfico con años de
+                trayectoria, dedicado por completo a capturar los momentos
+                que de verdad importan. Nos apasiona lo que hacemos, y eso se
+                nota en cada trabajo que entregamos.
               </p>
               <p>
-                Sed do eiusmod tempor incididunt ut labore et dolore magna
-                aliqua. Trabajamos con casamientos, cumpleaños, eventos
-                corporativos y producciones audiovisuales, entregando
-                resultados de la más alta calidad con tiempos de entrega
-                cuidados.
+                Nos especializamos en cubrir todo tipo de eventos —bodas,
+                cumpleaños de 15, eventos corporativos, sesiones de retrato
+                familiar y eventos de automovilismo— adaptándonos a cada
+                ocasión y a las necesidades particulares de cada cliente. Lo
+                que nos distingue no es solo la técnica: es el compromiso y
+                la atención personalizada en cada trabajo, cuidando cada
+                detalle de principio a fin.
+              </p>
+              <p>
+                Si estás planeando un evento importante o simplemente querés
+                guardar un recuerdo para siempre, nos encantaría acompañarte.
+                Escribinos o mirá los eventos que ya tuvimos el gusto de
+                cubrir.
               </p>
             </div>
             <Link
@@ -112,10 +120,10 @@ export default function HomePage() {
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-2">
             {[
-              { value: "10+", label: "Años de experiencia" },
-              { value: "500+", label: "Eventos cubiertos" },
-              { value: "50k+", label: "Fotos entregadas" },
-              { value: "100%", label: "Clientes satisfechos" },
+              { value: "5", label: "Cubrimos todo tipo de eventos" },
+              { value: "+3", label: "Años de trayectoria" },
+              { value: "100%", label: "Dedicación en cada detalle" },
+              { value: "0", label: "Trabajo delegado a terceros" },
             ].map((stat) => (
               <div
                 key={stat.label}

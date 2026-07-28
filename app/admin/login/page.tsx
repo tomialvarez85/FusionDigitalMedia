@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/lib/toast-context";
+import Spinner from "@/components/spinner";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -86,8 +87,9 @@ export default function AdminLoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-zinc-950 transition-colors hover:bg-amber-300 disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-zinc-950 transition-colors hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
         >
+          {loading && <Spinner className="h-4 w-4" />}
           {loading ? "Ingresando..." : "Ingresar"}
         </button>
 
