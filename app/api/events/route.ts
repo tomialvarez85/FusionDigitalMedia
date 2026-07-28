@@ -1,22 +1,19 @@
 import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getAuthUser } from "@/lib/supabase/server";
 import { getCurrentPhotographer } from "@/lib/photographer";
 
 const SALT_ROUNDS = 10;
 
 export async function POST(request: NextRequest) {
   const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
 
   if (!user) {
     return NextResponse.json({ error: "No autenticado." }, { status: 401 });
   }
 
-  const photographer = await getCurrentPhotographer(supabase);
+  const photographer = await getCurrentPhotographer(supabase, user);
   if (!photographer) {
     return NextResponse.json(
       { error: "No se encontró tu perfil de fotógrafo." },

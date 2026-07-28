@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getAuthUser } from "@/lib/supabase/server";
 import { getCurrentPhotographer } from "@/lib/photographer";
 import LogoutButton from "./logout-button";
 
@@ -17,13 +17,11 @@ export default async function AdminLayout({
 
   try {
     const supabase = createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const user = await getAuthUser();
 
     if (user) {
       isAuthenticated = true;
-      const photographer = await getCurrentPhotographer(supabase);
+      const photographer = await getCurrentPhotographer(supabase, user);
       photographerName = photographer?.nombre ?? null;
     }
   } catch {
